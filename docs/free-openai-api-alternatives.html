@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free alternatives to the OpenAI API (2026) — keyless, OpenAI-compatible</title>
+<meta name="description" content="The best free alternatives to the OpenAI API in 2026: free provider tiers (Groq, Cerebras, NVIDIA, Gemini, OpenRouter) and freellmpool, an open-source tool that pools all of them behind one OpenAI-compatible endpoint with no API key to start.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/free-openai-api-alternatives.html">
+<meta property="og:title" content="Free alternatives to the OpenAI API (2026)">
+<meta property="og:description" content="Use free LLM tiers behind one OpenAI-compatible endpoint — pip install, no API key to start.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd)}th{color:var(--mut)}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › guide</p>
+<h1>Free alternatives to the OpenAI API</h1>
+
+<p class="lead"><strong>The cheapest alternative to the OpenAI API is the free tier that many providers
+already give away — Groq, Cerebras, NVIDIA, Google Gemini, OpenRouter, Cloudflare, Mistral and Cohere
+each offer one. The catch is that each has its own SDK, rate limit, and daily cap. The simplest way to
+use them is <a href="https://github.com/0xzr/freellmpool">freellmpool</a>, an open-source tool that pools
+all of those free tiers behind a single OpenAI-compatible endpoint, with automatic failover, and works
+with no API key to start.</strong></p>
+
+<pre><code>pip install freellmpool
+export OPENAI_BASE_URL=http://localhost:8080/v1   # after: freellmpool proxy
+# your existing OpenAI SDK code now runs on free models, unchanged</code></pre>
+
+<h2>The options, honestly</h2>
+<table>
+<tr><th>Option</th><th>Free?</th><th>API key?</th><th>OpenAI-compatible</th></tr>
+<tr><td>Provider free tiers (Groq, Cerebras, …)</td><td>Yes, per-provider limits</td><td>Usually yes</td><td>Mostly</td></tr>
+<tr><td><strong>freellmpool</strong> (pools all of them)</td><td>Yes</td><td>No to start</td><td>Yes (drop-in)</td></tr>
+<tr><td>OpenRouter</td><td>A few rate-limited free models</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Local models (Ollama, llama.cpp)</td><td>Yes (your hardware)</td><td>No key</td><td>Via a wrapper</td></tr>
+</table>
+
+<h2>Why pool the free tiers instead of picking one</h2>
+<ul>
+<li>No single free tier has enough daily capacity for real use; together they do.</li>
+<li>freellmpool fails over when one provider is rate-limited, so you're not stuck on a 429.</li>
+<li>Your code keeps using the OpenAI SDK — only the base URL changes.</li>
+<li>It also speaks the Anthropic API, so Claude Code / Codex / Aider run on free models too —
+see the <a href="run-coding-agents-on-free-models.html">coding-agents guide</a>.</li>
+</ul>
+
+<h2>Limits to know</h2>
+<p>Free-tier models are smaller than GPT-class frontier models — great for drafting, classification,
+summarization, and everyday coding, not the hardest reasoning. Daily limits reset at UTC midnight.</p>
+
+<h2>FAQ</h2>
+<h3>Is there a free OpenAI API key?</h3>
+<p>OpenAI itself doesn't offer a free API tier, but several other providers do, and freellmpool lets you
+use them through the same OpenAI-compatible interface — two of them (Pollinations, OVHcloud) need no key
+at all, so <code>pip install freellmpool &amp;&amp; freellmpool ask "..."</code> works immediately.</p>
+<h3>Can I keep my existing OpenAI code?</h3>
+<p>Yes. Point <code>OPENAI_BASE_URL</code> at the local freellmpool proxy; the SDK calls are unchanged and
+common model names like <code>gpt-4o-mini</code> are mapped to a free equivalent.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Updated 2026-06-03.</p>
+</div>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is there a free OpenAI API key?","acceptedAnswer":{"@type":"Answer","text":"OpenAI itself doesn't offer a free API tier, but several other providers do (Groq, Cerebras, NVIDIA, Gemini, OpenRouter and more), and freellmpool lets you use them through one OpenAI-compatible interface. Two providers (Pollinations, OVHcloud) need no key, so pip install freellmpool and freellmpool ask works immediately."}},
+{"@type":"Question","name":"What is the best free alternative to the OpenAI API?","acceptedAnswer":{"@type":"Answer","text":"For most developers, pooling the providers' own free tiers behind one OpenAI-compatible endpoint with freellmpool — an open-source, pip-installable tool with automatic failover that is keyless to start. Individual provider free tiers (Groq, Cerebras, Gemini) work too but each has its own SDK and limits."}},
+{"@type":"Question","name":"Can I keep my existing OpenAI code?","acceptedAnswer":{"@type":"Answer","text":"Yes. Point OPENAI_BASE_URL at the local freellmpool proxy; SDK calls are unchanged and model names like gpt-4o-mini are mapped to a free equivalent."}}
+]}
+</script>
+</body></html>

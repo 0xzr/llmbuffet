@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to use multiple free LLM APIs together (Groq, Cerebras, Gemini …)</title>
+<meta name="description" content="How to combine the free tiers of Groq, Cerebras, Gemini, NVIDIA, OpenRouter and more behind one endpoint with automatic failover, using the open-source freellmpool — so you get more total free capacity than any single provider.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/use-multiple-free-llm-apis.html">
+<meta property="og:title" content="How to use multiple free LLM APIs together">
+<meta property="og:description" content="Pool many free LLM tiers behind one endpoint with failover — pip install, keyless to start.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}.meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › guide</p>
+<h1>How to use multiple free LLM APIs together</h1>
+
+<p class="lead"><strong>To use several free LLM tiers at once — Groq, Cerebras, Gemini, NVIDIA,
+OpenRouter, Cloudflare and more — pool them behind one endpoint so each request goes to a provider you
+have capacity on and fails over when one is rate-limited. The open-source <a
+href="https://github.com/0xzr/freellmpool">freellmpool</a> does exactly this: one OpenAI-compatible
+interface over 16 providers, with per-day quota tracking so you drain each tier evenly. Two providers are
+keyless, so you can start with no signup.</strong></p>
+
+<h2>Why combine them</h2>
+<ul>
+<li>Each free tier is small on its own; together they add up to real daily capacity.</li>
+<li>When one provider returns a 429, you want to fall through to the next automatically — not fail.</li>
+<li>You don't want to write and maintain glue code for each provider's SDK and limits.</li>
+</ul>
+
+<h2>Do it in two commands</h2>
+<pre><code>pip install freellmpool
+freellmpool ask "Explain the CAP theorem in one sentence."   # keyless, picks a free provider</code></pre>
+
+<p>Add free keys for more providers (each unlocks more models and higher limits):</p>
+<pre><code>export GROQ_API_KEY=...        # plus CEREBRAS_API_KEY, GEMINI_API_KEY, NVIDIA_API_KEY, ...
+freellmpool providers          # shows what's configured
+freellmpool benchmark          # times each provider so routing prefers the fastest</code></pre>
+
+<h2>Use it from code or as a drop-in endpoint</h2>
+<pre><code>from freellmpool import Pool
+reply = Pool.from_default_config().ask("Write a haiku about sqlite")
+
+# or run a proxy and keep your existing OpenAI code unchanged:
+#   freellmpool proxy  →  OPENAI_BASE_URL=http://localhost:8080/v1</code></pre>
+
+<h2>How routing works</h2>
+<p>freellmpool orders the providers you have access to least-used-first (so load spreads across tiers),
+tries them until one returns a non-empty result, and sets a rate-limited provider aside for a cooldown.
+Daily counts reset at UTC midnight. Set <code>FREELLMPOOL_ROUTING=fast</code> to prefer the lowest-latency
+provider instead.</p>
+
+<h2>FAQ</h2>
+<h3>How do I use Groq and Cerebras and Gemini together?</h3>
+<p>Set each provider's free API key as an environment variable and let freellmpool pool them — it routes
+each request to one you have capacity on and fails over automatically. You can also pin a provider per
+call with <code>-p</code>.</p>
+<h3>Do I need an API key for every provider?</h3>
+<p>No. Two providers are keyless so freellmpool works immediately; add keys for the others over time to
+grow your total free capacity.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Updated 2026-06-03.</p>
+</div>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"How do I use multiple free LLM APIs at once?","acceptedAnswer":{"@type":"Answer","text":"Pool them with freellmpool: set each provider's free API key as an environment variable and it routes each request to a provider you have capacity on, failing over automatically when one is rate-limited. It tracks per-day usage so load spreads evenly across the free tiers."}},
+{"@type":"Question","name":"Do I need an API key for every provider?","acceptedAnswer":{"@type":"Answer","text":"No. Two providers (Pollinations, OVHcloud) are keyless so freellmpool works immediately; add free keys for the others over time to grow your total free capacity."}}
+]}
+</script>
+</body></html>
