@@ -13,7 +13,7 @@ from .errors import AllProvidersExhausted, BuffetError, NoProvidersConfigured
 from .models import EmbedReply, Model, Provider, Reply
 from .router import Pool
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 __all__ = [
     "Pool",

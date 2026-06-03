@@ -37,7 +37,7 @@ _THINKING_HINTS = (
     "nemotron",
     "gpt-oss",  # emits reasoning; needs token headroom or content comes back empty
 )
-_THINKING_FLOOR = 8192
+_THINKING_FLOOR = 4096  # room for reasoning, but under caps like Groq's gpt-oss limit
 
 
 def _is_thinking(model: str) -> bool:

@@ -96,12 +96,15 @@ def _strip_fences(text: str) -> str:
 def cmd_providers(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     configured = {p.id for p in configured_providers(catalog)}
-    n_models = sum(len(p.models) for p in catalog)
+    n_models = sum(1 for p in catalog for m in p.models if m.enabled)
     print(f"freellmpool catalog: {len(catalog)} providers, {n_models} models\n")
     for p in catalog:
         mark = "✓" if p.id in configured else "·"
         status = "configured" if p.id in configured else f"set {p.key_env}"
-        print(f"  {mark} {p.id:<12} {p.label:<28} {len(p.models):>2} models   [{status}]")
+        on = sum(1 for m in p.models if m.enabled)
+        off = len(p.models) - on
+        count = f"{on} models" + (f" (+{off} off)" if off else "")
+        print(f"  {mark} {p.id:<12} {p.label:<28} {count:<16} [{status}]")
     if not configured:
         print("\nNo providers configured yet. See .env.example for the env vars to set.")
     return 0
@@ -121,8 +124,11 @@ def cmd_models(args: argparse.Namespace) -> int:
         keyless = "  (keyless)" if p.keyless and p.id in configured else ""
         print(f"\n{mark} {p.id}  —  {p.label}{keyless}")
         for m in p.models:
+            if not m.enabled and not args.all:
+                continue
             shown += 1
-            print(f"    {p.id}/{m.name}")
+            tag = "  (off by default)" if not m.enabled else ""
+            print(f"    {p.id}/{m.name}{tag}")
     if shown == 0:
         print("No models match. Try `freellmpool providers` to see configuration status.")
         return 0
@@ -260,6 +266,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_models.add_argument("-p", "--providers", help="comma-separated provider ids to filter")
     p_models.add_argument(
         "-c", "--configured-only", action="store_true", help="only show configured providers"
+    )
+    p_models.add_argument(
+        "--all", action="store_true", help="include models that are off by default"
     )
     p_models.set_defaults(func=cmd_models)
 

@@ -105,7 +105,7 @@ def _call_tool(pool: Pool, params: dict) -> dict:
             return _text(f"{type(exc).__name__}: {exc}", is_error=True)
         return _text(reply.text)
     if name == "free_llm_models":
-        ids = [f"{p.id}/{m.name}" for p in pool.providers for m in p.models]
+        ids = [f"{p.id}/{m.name}" for p in pool.providers for m in p.models if m.enabled]
         return _text("\n".join(ids) or "no providers configured")
     if name == "free_llm_quota":
         return _text(_quota_summary(pool))

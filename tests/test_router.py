@@ -166,6 +166,28 @@ def test_stream_chat_skips_gemini(providers, env, quota):
         next(gen)
 
 
+def test_disabled_model_skipped_by_auto_but_reachable_explicitly(env, quota):
+    from freellmpool.models import Model, Provider
+
+    prov = Provider(
+        id="x",
+        label="X",
+        adapter="openai",
+        base_url="https://x.test/v1",
+        key_env="X_KEY",
+        models=(Model("on-model"), Model("off-model", enabled=False)),
+    )
+    post = make_post({})  # any call returns "ok"
+    pool = Pool([prov], quota=quota, env={"X_KEY": "k"}, post=post)
+    # auto routing only ever picks the enabled model
+    seen = set()
+    for _ in range(5):
+        seen.add(pool.ask("hi").model)
+    assert seen == {"on-model"}
+    # but an explicit pin can still reach the disabled one
+    assert pool.ask("hi", model="off-model").model == "off-model"
+
+
 def test_tool_calls_reply_is_success(providers, env, quota):
     tc = [{"id": "c", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
     post = make_post(

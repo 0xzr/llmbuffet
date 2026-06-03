@@ -37,7 +37,8 @@ def _model_ids(pool: Pool) -> list[str]:
     ids = ["auto"]
     for provider in pool.providers:
         for m in provider.models:
-            ids.append(f"{provider.id}/{m.name}")
+            if m.enabled:
+                ids.append(f"{provider.id}/{m.name}")
     return ids
 
 

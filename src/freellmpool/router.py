@@ -161,8 +161,12 @@ class Pool:
             if include_set is not None and provider.id not in include_set:
                 continue
             for m in provider.models:
-                if model is not None and m.name != model:
-                    continue
+                if model is not None:
+                    if m.name != model:
+                        continue
+                    # explicit model pin: allow it even if disabled by default
+                elif not m.enabled:
+                    continue  # auto routing skips off-by-default models
                 targets.append(Target(provider, m.name, m.rpd))
         return targets
 

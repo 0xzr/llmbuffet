@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] — 2026-06-03
+
+### Changed
+- **Every model live-validated; broken ones off by default.** All 324 catalog
+  models were reachability-tested; 94 that failed (404/403/402, persistent
+  errors, timeouts) are now `enabled = false` — skipped by auto-routing so users
+  don't hit dead models, but still callable when pinned explicitly (`-m`).
+  `Model.enabled` added; `freellmpool providers` shows `N models (+M off)` and
+  `freellmpool models --all` lists the disabled ones.
+
+### Fixed
+- Reasoning-model token floor lowered from 8192 to 4096 — 8192 exceeded some
+  providers' caps (e.g. Groq's gpt-oss), which made those models error/return
+  empty. Groq's `gpt-oss-120b`/`-20b` work again.
+
 ## [0.9.0] — 2026-06-03
 
 ### Added

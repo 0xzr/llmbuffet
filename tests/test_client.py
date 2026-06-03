@@ -33,7 +33,7 @@ def test_thinking_model_bumps_max_tokens():
         max_tokens=512,
         post=post,
     )
-    assert seen["max_tokens"] >= 8192  # reasoning model got headroom
+    assert seen["max_tokens"] >= 4096  # reasoning model got headroom
 
 
 def test_non_thinking_model_keeps_max_tokens():
