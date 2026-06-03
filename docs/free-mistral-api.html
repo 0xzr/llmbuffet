@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Mistral API — use Mistral's free tier and Codestral (and pool it)</title>
+<meta name="description" content="How to use the free Mistral API: get a free key from console.mistral.ai, the OpenAI-compatible endpoint, free models (Mistral Small, Codestral for code, Mistral Nemo), and how to pool Mistral with other free LLM tiers using freellmpool.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/free-mistral-api.html">
+<meta property="og:title" content="Free Mistral API — Mistral's free tier + Codestral">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:25px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:34px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}.meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers</p>
+<h1>Free Mistral API</h1>
+
+<p class="lead"><strong>Mistral offers a free experimentation tier. Get a free key at
+<a href="https://console.mistral.ai/api-keys">console.mistral.ai/api-keys</a>; the endpoint is
+OpenAI-compatible at <code>https://api.mistral.ai/v1</code>, and free models include Mistral Small,
+Mistral Nemo, and Codestral (strong at code). To combine Mistral's free quota with other providers and fail
+over when it's rate-limited, pool it with <a href="https://github.com/0xzr/freellmpool">freellmpool</a>.</strong></p>
+
+<h2>Use Mistral's free API directly</h2>
+<pre><code>curl https://api.mistral.ai/v1/chat/completions \
+  -H "Authorization: Bearer $MISTRAL_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"mistral-small-latest","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
+<p>Free models include <code>mistral-small-latest</code>, <code>open-mistral-nemo</code>, and
+<code>codestral-latest</code> (code-specialized).</p>
+
+<h2>Pool Mistral with other free tiers</h2>
+<p>Codestral is a nice free option for code tasks; pair it with faster general models via freellmpool:</p>
+<pre><code>pip install freellmpool
+export MISTRAL_API_KEY=...        # plus other free keys
+freellmpool ask -m codestral-latest "Write a Python function to dedupe a list"
+freellmpool ask "..."            # pool + fail over</code></pre>
+<p>See <a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a> and
+<a href="run-coding-agents-on-free-models.html">running coding agents on free models</a>.</p>
+
+<h2>FAQ</h2>
+<h3>Is the Mistral API free?</h3>
+<p>Yes, Mistral has a free experimentation tier. Create a key at console.mistral.ai/api-keys and call the
+OpenAI-compatible endpoint at api.mistral.ai/v1. Free usage is rate-limited; verify current limits.</p>
+<h3>Is Codestral free to use?</h3>
+<p>Codestral, Mistral's code model, is available on the free tier via <code>codestral-latest</code>. It's a
+good free choice for code generation and completion; pool it with other free models using freellmpool.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Limits are approximate and change — check Mistral's docs. Updated 2026-06-03.</p>
+</div>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is the Mistral API free?","acceptedAnswer":{"@type":"Answer","text":"Yes, Mistral has a free experimentation tier. Create a key at console.mistral.ai/api-keys and call the OpenAI-compatible endpoint at https://api.mistral.ai/v1. Free usage is rate-limited; verify current limits. You can pool Mistral with other free tiers using freellmpool."}},
+{"@type":"Question","name":"Is Codestral free to use?","acceptedAnswer":{"@type":"Answer","text":"Codestral, Mistral's code model, is available on the free tier via codestral-latest. It's a good free choice for code generation and completion, and can be pooled with other free models using freellmpool."}}
+]}
+</script>
+</body></html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Groq API — how to use Groq's free tier (and pool it with others)</title>
+<meta name="description" content="How to use the Groq free API tier: get a free key, the OpenAI-compatible base URL, available models (Llama 3.3 70B, gpt-oss, Llama 4 Scout), and how to pool Groq with other free tiers using freellmpool for more capacity and failover.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/free-groq-api.html">
+<meta property="og:title" content="Free Groq API — use Groq's free tier">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:25px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:34px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}.meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers</p>
+<h1>Free Groq API</h1>
+
+<p class="lead"><strong>Groq offers a free API tier known for very fast inference. You get a free key at
+<a href="https://console.groq.com/keys">console.groq.com/keys</a>, the endpoint is OpenAI-compatible at
+<code>https://api.groq.com/openai/v1</code>, and free models include Llama 3.3 70B, Llama 4 Scout, and
+gpt-oss 20B/120B. Free limits are roughly ~1,000 requests/day per model (check current docs). To go beyond
+Groq's cap, pool it with other free tiers using <a href="https://github.com/0xzr/freellmpool">freellmpool</a>,
+which fails over automatically when Groq is rate-limited.</strong></p>
+
+<h2>Use Groq's free API directly</h2>
+<pre><code>curl https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
+<p>Free models on the tier: <code>llama-3.3-70b-versatile</code>, <code>llama-3.1-8b-instant</code>,
+<code>openai/gpt-oss-120b</code>, <code>openai/gpt-oss-20b</code>,
+<code>meta-llama/llama-4-scout-17b-16e-instruct</code>, and more.</p>
+
+<h2>Pool Groq with other free tiers (one endpoint, failover)</h2>
+<p>Groq's free cap is generous but finite. freellmpool pools Groq with Cerebras, Gemini, NVIDIA and a dozen
+others so a 429 on Groq transparently falls through to the next provider:</p>
+<pre><code>pip install freellmpool
+export GROQ_API_KEY=...          # plus any other free keys you have
+freellmpool ask -p groq "Write a haiku about sqlite"   # pin Groq
+freellmpool ask "..."                                  # or let it pool + fail over</code></pre>
+<p>Run a proxy (<code>freellmpool proxy</code>) and your existing OpenAI code uses Groq + the pool
+unchanged. See <a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a>.</p>
+
+<h2>FAQ</h2>
+<h3>Is the Groq API free?</h3>
+<p>Yes, Groq has a free tier. Create a key at console.groq.com/keys and call the OpenAI-compatible endpoint
+at api.groq.com/openai/v1. Free usage is rate-limited (roughly ~1,000 requests/day per model; verify current
+limits).</p>
+<h3>What models are free on Groq?</h3>
+<p>Free Groq models include Llama 3.3 70B Versatile, Llama 3.1 8B Instant, Llama 4 Scout, and OpenAI's
+gpt-oss 20B/120B, among others.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Limits are approximate and change — check Groq's docs. Updated 2026-06-03.</p>
+</div>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is the Groq API free?","acceptedAnswer":{"@type":"Answer","text":"Yes, Groq has a free tier. Create a key at console.groq.com/keys and call the OpenAI-compatible endpoint at https://api.groq.com/openai/v1. Free usage is rate-limited (roughly ~1,000 requests/day per model; verify current limits). You can pool Groq with other free tiers using freellmpool for failover and more capacity."}},
+{"@type":"Question","name":"What models are free on Groq?","acceptedAnswer":{"@type":"Answer","text":"Free Groq models include Llama 3.3 70B Versatile, Llama 3.1 8B Instant, Llama 4 Scout, and OpenAI's gpt-oss 20B and 120B, among others."}}
+]}
+</script>
+</body></html>
