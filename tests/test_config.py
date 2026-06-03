@@ -20,6 +20,7 @@ def test_keyless_providers_always_configured():
     ids = {p.id for p in configured_providers(catalog, {})}
     assert "ovh" in ids  # keyless
     assert "llm7" in ids  # key optional
+    assert "pollinations" in ids  # keyless
     assert "groq" not in ids  # needs a key
 
 

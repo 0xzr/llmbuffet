@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-06-03
+
+### Changed
+- **Renamed `llmbuffet` → `freellmpool`** (clearer, keyword-rich, no name
+  collision). Python API is now `from freellmpool import Pool`; CLI is
+  `freellmpool` (with `ffp` as a short alias); config lives under
+  `~/.config/freellmpool/`; env vars are `FREELLMPOOL_*`.
+
+### Added
+- **Codex / Responses API shim** — the proxy now serves `POST /v1/responses`
+  (non-streaming + typed SSE events), so OpenAI Codex CLI and other
+  Responses-based agents can run on pooled free inference.
+- **Pollinations** — a second keyless provider (16 providers / 56 models total),
+  strengthening the zero-config path.
+- Agent docs for Codex CLI in `docs/AGENTS.md`; honest **Limitations** section
+  in the README.
+
 ## [0.2.0] — 2026-06-03
 
 ### Added

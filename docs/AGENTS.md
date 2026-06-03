@@ -31,6 +31,21 @@ print(resp.choices[0].message.content)
 See [`examples/agent_openai_sdk.py`](../examples/agent_openai_sdk.py) for a
 runnable version.
 
+## OpenAI Codex CLI
+
+Codex speaks the **Responses API**, which `freellmpool` shims at `/v1/responses`:
+
+```bash
+freellmpool proxy --port 8080
+export OPENAI_BASE_URL=http://localhost:8080/v1
+export OPENAI_API_KEY=anything
+codex --config model_provider=openai   # or set base URL in ~/.codex/config.toml
+```
+
+> The Responses shim is minimal (text in/out, streaming events). It's great for
+> running Codex/agents on free inference for everyday coding; tool-calling and
+> richer Responses features are a work in progress.
+
 ## aider (AI pair programming in your terminal)
 
 ```bash

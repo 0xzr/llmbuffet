@@ -1,23 +1,22 @@
-# 🍽️ freellmpool — one free LLM API gateway for every free tier
+# freellmpool — pool every free LLM API into one endpoint
 
-**A free, OpenAI-compatible LLM gateway that pools 15 free-tier providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, GitHub Models, Cloudflare & more) behind one endpoint — with automatic failover and quota tracking. Works out of the box with zero API keys.**
+**A free, OpenAI-compatible LLM gateway that pools the free tiers of 16 providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, GitHub Models, Cloudflare & more) behind one `/v1` endpoint — with automatic failover and quota tracking. Works out of the box with zero API keys.**
 
 [![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
 [![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
 
-> Stop juggling a dozen free LLM SDKs and rate limits. Point your OpenAI client at `freellmpool` and never pay for a hobby project's inference again.
+> One free tier is a toy. **Sixteen, stacked, are tens of thousands of free requests a day.** Point your OpenAI client at `freellmpool` and stop paying for a hobby project's inference.
 
-Groq, Cerebras, Google Gemini, OpenRouter, GitHub Models, Cloudflare Workers AI, Mistral, Cohere, SambaNova — each hands out a generous **free tier**, but each has its own SDK, its own rate limits, and its own daily cap. `freellmpool` puts all of them into one pool:
+Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare Workers AI, Mistral, Cohere, and more each hand out a generous **free tier** — but each has its own SDK, rate limits, and daily cap. `freellmpool` puts all of them into one pool:
 
-- 🔌 **One OpenAI-compatible endpoint.** Point any existing OpenAI SDK / tool at `freellmpool` and it just works — no code changes.
-- 🔁 **Automatic failover.** Hit a rate limit or a 5xx on one provider? `freellmpool` transparently moves to the next.
-- 📊 **Quota-aware routing.** Spreads load least-used-first and respects each provider's free daily limit, so you squeeze the most out of every tier.
-- 🧩 **One catalog, your keys.** Drop in the keys you have; `freellmpool` skips the rest. No key is ever stored in the repo.
-- 🪶 **Tiny.** Pure-Python, one dependency (`httpx`). The proxy runs on the standard library.
-
-> Why it exists: stitching together a dozen free LLM tiers by hand is fiddly and breaks constantly. `freellmpool` makes "never pay for a hobby project's LLM calls again" a one-command setup.
+- 🔌 **One OpenAI-compatible endpoint.** Point any OpenAI SDK / tool at `freellmpool` and it just works — `/v1/chat/completions`, `/v1/models`, and a `/v1/responses` shim for **Codex CLI & agents**.
+- 🟢 **Zero config.** Works with **no API keys at all** — keyless providers are built in. `pip install` → `ask` → done.
+- 🔁 **Automatic failover.** Rate-limited or 5xx on one provider? `freellmpool` transparently rolls to the next, with a cooldown so it stops hammering a throttled pool.
+- 📊 **Quota-aware routing.** Spreads load least-used-first and respects each free daily limit, so you squeeze the most out of every tier.
+- 🤖 **Built for agents.** Streaming (SSE), a Codex/Responses shim, and mid-run failover — exactly where long agent loops usually die.
+- 🪶 **Tiny.** Pure-Python, one dependency (`httpx`). The proxy runs on the standard library. No keys are ever stored in the repo.
 
 ---
 
@@ -29,7 +28,7 @@ pip install freellmpool      # or: pipx install freellmpool
 
 ## Zero-config: it works with no keys at all
 
-Two providers in the catalog need **no signup** (OVHcloud is keyless; LLM7's key is optional), so this works the moment you install:
+Three providers in the catalog need **no signup** (Pollinations and OVHcloud are keyless; LLM7's key is optional), so this works the moment you install:
 
 ```bash
 pip install freellmpool
@@ -78,7 +77,7 @@ freellmpool providers
 ```
 
 ```
-freellmpool catalog: 15 providers, 53 models
+freellmpool catalog: 16 providers, 56 models
 
   ✓ ovh          OVHcloud AI Endpoints (keyless)  5 models   [configured]
   ✓ llm7         LLM7 (key optional)           1 models   [configured]
@@ -105,6 +104,7 @@ Same idea through the proxy via the OpenAI `model` field: `"auto"`, `"groq"`, or
 
 | Provider | Key env | Notes |
 |---|---|---|
+| Pollinations | — | **keyless**, works out of the box |
 | OVHcloud AI Endpoints | — | **keyless**, works out of the box |
 | LLM7 | `LLM7_API_KEY` | key optional |
 | Groq | `GROQ_API_KEY` | very fast |
@@ -193,16 +193,26 @@ The built-in catalog lives in [`src/freellmpool/providers.toml`](src/freellmpool
 
 | | freellmpool | Calling each SDK by hand | A paid gateway |
 |---|---|---|---|
-| Free tiers pooled | ✅ 15 providers | ⚠️ you wire each one | ❌ |
+| Free tiers pooled | ✅ 16 providers | ⚠️ you wire each one | ❌ |
 | Automatic failover | ✅ | ❌ | ✅ |
 | Quota tracking | ✅ per-day | ❌ | varies |
 | Drop-in OpenAI proxy | ✅ | ❌ | ✅ |
 | Cost | $0 | $0 | 💸 |
 | Dependencies | 1 (`httpx`) | many | a service |
 
+## Limitations (read this)
+
+`freellmpool` is honest about what it is — a way to pool **free tiers**, not a frontier-model service:
+
+- **No GPT-5 / Claude-Opus-class reasoning.** Free tiers are smaller/faster models — great for triage, drafting, classification, tool-routing, and everyday coding; reach for a frontier model for the hardest reasoning.
+- **Quality and capacity vary through the day** as high-cap pools exhaust; daily limits reset at UTC midnight.
+- **Free tiers change without notice.** Endpoints, model ids, and limits drift — that's what the one-line `providers.toml` PRs are for.
+- **Local-first, single-user.** The proxy defaults to `127.0.0.1`; if you bind it to a network interface, set a proxy key (`--api-key`). Not meant as a multi-tenant production gateway.
+- **Respect the providers.** This pools *free* tiers for personal projects and experimentation — don't abuse them, or we all lose them.
+
 ## Status
 
-`freellmpool` is `0.1` and moving fast. Provider endpoints and free-tier limits drift — if something breaks, please [open an issue](https://github.com/0xzr/freellmpool/issues) or send a one-line PR to `providers.toml`. Contributions of new free providers are especially welcome.
+`freellmpool` is `0.3` and moving fast. Provider endpoints and free-tier limits drift — if something breaks, please [open an issue](https://github.com/0xzr/freellmpool/issues) or send a one-line PR to `providers.toml`. Contributions of new free providers are especially welcome.
 
 ## Found this useful?
 

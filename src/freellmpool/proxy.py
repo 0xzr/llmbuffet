@@ -13,6 +13,7 @@ freellmpool pulls in nothing beyond httpx.
 Supported routes:
     GET  /v1/models                 list available (provider/model) ids
     POST /v1/chat/completions       route a chat completion
+    POST /v1/responses              Responses API shim (Codex CLI / agents)
     GET  /healthz                   liveness probe
 """
 
@@ -36,7 +37,7 @@ def _model_ids(pool: Pool) -> list[str]:
 
 def make_handler(pool: Pool, api_key: str | None = None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "freellmpool/0.2"
+        server_version = "freellmpool/0.3"
 
         # quiet by default; the server prints its own concise log line
         def log_message(self, format, *args):  # noqa: A002
@@ -87,7 +88,9 @@ def make_handler(pool: Pool, api_key: str | None = None):
 
         def _do_post(self) -> None:
             route = self.path.rstrip("/")
-            if not (route.endswith("/v1/chat/completions") or route == "/chat/completions"):
+            is_chat = route.endswith("/v1/chat/completions") or route == "/chat/completions"
+            is_responses = route.endswith("/v1/responses") or route == "/responses"
+            if not (is_chat or is_responses):
                 self._error(404, f"unknown route {self.path}", "not_found")
                 return
             if not self._authorized():
@@ -109,37 +112,31 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._error(400, "request body must be a JSON object", "invalid_request_error")
                 return
 
-            messages = req.get("messages")
-            if not isinstance(messages, list) or not messages:
-                self._error(400, "'messages' must be a non-empty array", "invalid_request_error")
-                return
-            if not all(isinstance(m, dict) for m in messages):
-                self._error(400, "each message must be an object", "invalid_request_error")
-                return
+            if is_responses:
+                self._handle_responses(req)
+            else:
+                self._handle_chat(req)
 
+        def _resolve(self, req: dict, messages: list[dict]):
+            """Shared: resolve model/params and call the pool. Returns a Reply or
+            sends an error response and returns None."""
             requested = req.get("model") or "auto"
             if not isinstance(requested, str):
                 self._error(400, "'model' must be a string", "invalid_request_error")
-                return
-            provider_filter, model_filter = _parse_model(
-                requested, {p.id for p in pool.providers}
-            )
+                return None
+            provider_filter, model_filter = _parse_model(requested, {p.id for p in pool.providers})
             try:
-                max_tokens = int(req.get("max_tokens") or 1024)
+                max_tokens = int(req.get("max_tokens") or req.get("max_output_tokens") or 1024)
                 temp_raw = req.get("temperature")
                 temperature = 0.0 if temp_raw is None else float(temp_raw)
             except (TypeError, ValueError):
                 self._error(
-                    400, "'max_tokens' and 'temperature' must be numbers", "invalid_request_error"
+                    400, "'max_tokens'/'temperature' must be numbers", "invalid_request_error"
                 )
-                return
-
+                return None
             try:
-                reply = pool.chat(
-                    [
-                        {"role": str(m.get("role", "user")), "content": _content(m)}
-                        for m in messages
-                    ],
+                return pool.chat(
+                    messages,
                     model=model_filter,
                     providers=provider_filter,
                     max_tokens=max_tokens,
@@ -147,25 +144,52 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 )
             except NoProvidersConfigured as exc:
                 self._error(503, str(exc), "no_providers")
-                return
             except AllProvidersExhausted as exc:
                 self._error(502, str(exc), "all_providers_exhausted")
-                return
             except BuffetError as exc:  # pragma: no cover - defensive
                 self._error(500, str(exc), "freellmpool_error")
-                return
+            return None
 
+        def _handle_chat(self, req: dict) -> None:
+            messages = req.get("messages")
+            if not isinstance(messages, list) or not messages:
+                self._error(400, "'messages' must be a non-empty array", "invalid_request_error")
+                return
+            if not all(isinstance(m, dict) for m in messages):
+                self._error(400, "each message must be an object", "invalid_request_error")
+                return
+            norm = [{"role": str(m.get("role", "user")), "content": _content(m)} for m in messages]
+            reply = self._resolve(req, norm)
+            if reply is None:
+                return
             if req.get("stream"):
-                self._send_sse(reply)
+                self._send_sse(_sse_chunks(reply))
             else:
                 self._send(200, _to_openai_response(reply))
 
-        def _send_sse(self, reply) -> None:
-            """Emit the completion as an OpenAI-style SSE stream.
+        def _handle_responses(self, req: dict) -> None:
+            """Minimal OpenAI Responses API (/v1/responses) shim for Codex CLI
+            and other Responses-based agents."""
+            messages = _responses_input_to_messages(req)
+            if not messages:
+                self._error(400, "'input' is required", "invalid_request_error")
+                return
+            reply = self._resolve(req, messages)
+            if reply is None:
+                return
+            if req.get("stream"):
+                self._send_sse(_responses_sse_events(reply))
+            else:
+                self._send(200, _to_responses_object(reply))
+
+        def _send_sse(self, sse_blocks) -> None:
+            """Emit pre-formatted SSE blocks as a stream.
 
             This is a *buffered* stream: freellmpool resolves the full completion
             (with failover) first, then frames it as Server-Sent Events so that
-            clients which require ``stream: true`` work unchanged.
+            clients which require ``stream: true`` work unchanged. ``sse_blocks``
+            is an iterable of already-encoded SSE strings (chat and Responses use
+            different framings).
             """
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -173,9 +197,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
             self.send_header("Connection", "close")
             self.end_headers()
             try:
-                for chunk in _sse_chunks(reply):
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-                self.wfile.write(b"data: [DONE]\n\n")
+                for block in sse_blocks:
+                    self.wfile.write(block.encode())
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
                 pass
@@ -233,17 +256,96 @@ def _to_openai_response(reply) -> dict:
 
 
 def _sse_chunks(reply):
-    """Yield OpenAI chat.completion.chunk dicts for a finished reply."""
+    """Yield OpenAI chat.completion.chunk SSE blocks for a finished reply."""
     cid = f"chatcmpl-freellmpool-{reply.provider_id}"
     model = f"{reply.provider_id}/{reply.model}"
     base = {"id": cid, "object": "chat.completion.chunk", "model": model}
-    # role delta, then the content as one delta, then a stop chunk.
-    yield {**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
-    yield {
-        **base,
-        "choices": [{"index": 0, "delta": {"content": reply.text}, "finish_reason": None}],
+
+    def block(chunk):
+        return f"data: {json.dumps(chunk)}\n\n"
+
+    yield block(
+        {**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
+    )
+    yield block(
+        {**base, "choices": [{"index": 0, "delta": {"content": reply.text}, "finish_reason": None}]}
+    )
+    yield block({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+    yield "data: [DONE]\n\n"
+
+
+# ---- OpenAI Responses API (/v1/responses) shim — for Codex CLI & agents ------
+
+
+def _responses_input_to_messages(req: dict) -> list[dict]:
+    """Convert a Responses request (`instructions` + `input`) to chat messages.
+
+    `input` may be a plain string or a list of items, each with a `role` and
+    `content` that is a string or a list of typed parts ({type, text}).
+    """
+    messages: list[dict] = []
+    instructions = req.get("instructions")
+    if isinstance(instructions, str) and instructions:
+        messages.append({"role": "system", "content": instructions})
+
+    data = req.get("input")
+    if isinstance(data, str):
+        messages.append({"role": "user", "content": data})
+    elif isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "user"))
+            content = item.get("content", "")
+            if isinstance(content, list):
+                text = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            else:
+                text = str(content)
+            messages.append({"role": role, "content": text})
+    return messages
+
+
+def _to_responses_object(reply) -> dict:
+    rid = f"resp-freellmpool-{reply.provider_id}"
+    return {
+        "id": rid,
+        "object": "response",
+        "status": "completed",
+        "model": f"{reply.provider_id}/{reply.model}",
+        "output": [
+            {
+                "type": "message",
+                "id": f"msg-{reply.provider_id}",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": reply.text, "annotations": []}],
+            }
+        ],
+        "output_text": reply.text,  # convenience field the OpenAI SDK exposes
+        "usage": {
+            "input_tokens": reply.prompt_tokens or 0,
+            "output_tokens": reply.completion_tokens or 0,
+            "total_tokens": (reply.prompt_tokens or 0) + (reply.completion_tokens or 0),
+        },
+        "x_freellmpool": {"provider": reply.provider_id, "model": reply.model},
     }
-    yield {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+
+
+def _responses_sse_events(reply):
+    """Yield Responses-API SSE blocks (typed events) for a finished reply."""
+    obj = _to_responses_object(reply)
+
+    def event(name, payload):
+        return f"event: {name}\ndata: {json.dumps(payload)}\n\n"
+
+    yield event(
+        "response.created",
+        {"type": "response.created", "response": {"id": obj["id"], "status": "in_progress"}},
+    )
+    yield event(
+        "response.output_text.delta", {"type": "response.output_text.delta", "delta": reply.text}
+    )
+    yield event("response.completed", {"type": "response.completed", "response": obj})
 
 
 def serve(

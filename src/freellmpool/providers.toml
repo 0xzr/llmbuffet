@@ -20,8 +20,21 @@
 # time. Override per-user in ~/.config/freellmpool/providers.toml.
 
 # ---- Keyless / zero-setup (works out of the box) ----------------------------
-# LLM7 first: it's the most reliable keyless pool. OVHcloud's anonymous tier is
-# generous but rate-limits aggressively, so it sits second as a bonus.
+# These need NO API key, so freellmpool works the moment it's installed.
+# LLM7 + Pollinations are the most reliable keyless pools; OVHcloud's anonymous
+# tier is generous but rate-limits aggressively, so it sits last as a bonus.
+
+[[provider]]
+id = "pollinations"
+label = "Pollinations (keyless)"
+adapter = "openai"
+base_url = "https://text.pollinations.ai/openai"
+auth = "none"
+models = [
+    { name = "openai", rpd = 0 },
+    { name = "openai-fast", rpd = 0 },
+    { name = "mistral", rpd = 0 },
+]
 
 [[provider]]
 id = "llm7"

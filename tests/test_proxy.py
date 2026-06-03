@@ -151,6 +151,47 @@ def test_proxy_auth(providers, env, quota):
         httpd.server_close()
 
 
+def test_responses_shim_nonstream(server):
+    status, body = _post_json(
+        server + "/v1/responses",
+        {"model": "auto", "instructions": "be terse", "input": "hi"},
+    )
+    assert status == 200
+    assert body["object"] == "response"
+    assert body["status"] == "completed"
+    assert body["output_text"] == "ok"
+    assert body["output"][0]["content"][0]["type"] == "output_text"
+
+
+def test_responses_shim_input_items(server):
+    status, body = _post_json(
+        server + "/v1/responses",
+        {
+            "model": "auto",
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}],
+        },
+    )
+    assert status == 200
+    assert body["output_text"] == "ok"
+
+
+def test_responses_shim_streaming(server):
+    req = urllib.request.Request(
+        server + "/v1/responses",
+        data=json.dumps({"model": "auto", "stream": True, "input": "hi"}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310
+        raw = resp.read().decode()
+    assert "event: response.created" in raw
+    assert "event: response.output_text.delta" in raw
+    assert "event: response.completed" in raw
+
+
+def test_responses_missing_input_400(server):
+    assert _expect_status(server + "/v1/responses", {"model": "auto"}) == 400
+
+
 def test_parse_model():
     ids = {"groq", "cerebras"}
     assert _parse_model("auto", ids) == (None, None)
