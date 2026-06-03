@@ -162,3 +162,20 @@ def test_timeout_has_fast_connect():
     to = C._timeout(90.0)
     assert to.read == 90.0 and to.connect == 10.0  # fast-fail connect
     assert C._timeout(3.0).connect == 3.0  # connect never exceeds the overall timeout
+
+
+def test_client_singleton_under_concurrency():
+    import threading as _t
+
+    C._shared = None  # force re-init
+    results = []
+
+    def grab():
+        results.append(C._client())
+
+    threads = [_t.Thread(target=grab) for _ in range(16)]
+    for x in threads:
+        x.start()
+    for x in threads:
+        x.join()
+    assert len({id(r) for r in results}) == 1  # all threads got the same client

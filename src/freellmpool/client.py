@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -67,6 +68,7 @@ _USER_AGENT = "freellmpool/0.9 (+https://github.com/0xzr/freellmpool)"
 
 _CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
 _shared = None  # one pooled, keep-alive httpx.Client shared across calls/threads
+_shared_lock = threading.Lock()
 
 
 def _client():
@@ -74,16 +76,21 @@ def _client():
     a TCP+TLS handshake on every request — a big win for repeated calls to the
     same provider (agent loops). httpx.Client is thread-safe."""
     global _shared
-    if _shared is None:
-        import httpx
+    if _shared is None:  # fast path: avoid the lock once initialized
+        with _shared_lock:
+            if _shared is None:  # double-checked under the threaded proxy
+                import atexit
 
-        _shared = httpx.Client(
-            headers={"User-Agent": _USER_AGENT},
-            limits=httpx.Limits(
-                max_keepalive_connections=20, max_connections=100, keepalive_expiry=30.0
-            ),
-            follow_redirects=True,
-        )
+                import httpx
+
+                _shared = httpx.Client(
+                    headers={"User-Agent": _USER_AGENT},
+                    limits=httpx.Limits(
+                        max_keepalive_connections=20, max_connections=100, keepalive_expiry=30.0
+                    ),
+                    follow_redirects=True,
+                )
+                atexit.register(_shared.close)
     return _shared
 
 

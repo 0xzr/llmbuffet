@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.3] — 2026-06-03
+
+### Fixed
+- Thread-safe lazy init of the pooled httpx client (double-checked lock). Under
+  the threaded proxy, two concurrent first requests could each create a client
+  and orphan one. Also registers `atexit` close for graceful FD cleanup. (Found
+  in a Codex review of the 0.9.2 pooling change.)
+
 ## [0.9.2] — 2026-06-03
 
 ### Changed (performance)
