@@ -188,9 +188,11 @@ export OPENAI_BASE_URL=http://localhost:8080/v1 OPENAI_API_KEY=anything
 aider --model openai/auto          # or point any OpenAI-compatible tool here
 ```
 
-The proxy supports `stream: true` (SSE) and tool/function-calling, so streaming chat UIs and tool-using agent loops work too.
+The proxy does **real token-by-token streaming** (`stream: true`) and tool/function-calling, so streaming chat UIs and tool-using agent loops work too.
 
 ## Works with your tools
+
+> ⚡ **One-command setup:** `freellmpool code aider` (or `codex` / `cline` / `continue` / `cursor` / `opencode`) prints exactly how to wire that coding agent to free models.
 
 Anything that accepts a custom OpenAI base URL drops straight in — copy-paste configs in **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)**:
 

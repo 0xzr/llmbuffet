@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from . import client as _client
-from .client import PostFn, default_post
+from .client import PostFn, StreamPostFn, default_post, default_stream_post
 from .config import (
     configured_embedders,
     configured_providers,
@@ -53,12 +53,14 @@ class Pool:
         cooldown_seconds: float = 60.0,
         clock: Callable[[], float] | None = None,
         embedders: list[Provider] | None = None,
+        stream_post: StreamPostFn = default_stream_post,
     ):
         self.providers = providers
         self.embedders = embedders or []
         self.quota = quota or QuotaStore()
         self.env = env if env is not None else dict(os.environ)
         self._post = post
+        self._stream_post = stream_post
         self.cooldown_seconds = cooldown_seconds
         self._clock = clock or time.monotonic
         # provider_id -> monotonic time until which to deprioritize after a 429
@@ -282,5 +284,75 @@ class Pool:
             self.stats["prompt_tokens"] += reply.prompt_tokens or 0
             self.stats["completion_tokens"] += reply.completion_tokens or 0
             return reply
+
+        raise AllProvidersExhausted(attempts)
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        providers: Iterable[str] | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.0,
+        timeout: float = 90.0,
+    ):
+        """Stream content deltas with token-level streaming.
+
+        Yields a meta dict ``{"provider", "model"}`` first, then content-delta
+        strings. Failover happens *before* the first token (on a non-200); once
+        tokens flow, freellmpool is committed to that provider. Gemini-adapter
+        providers are skipped (no OpenAI-shape stream).
+        """
+        if not self.providers:
+            raise NoProvidersConfigured("no provider has an API key set")
+        targets = self._order(self._all_targets(include=providers, model=model))
+        targets = [t for t in targets if t.provider.adapter != "gemini"]
+        if not targets:
+            raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
+
+        now = self._clock()
+        available = [t for t in targets if not self._cooled(t.provider.id, now)]
+        cooled = [t for t in targets if self._cooled(t.provider.id, now)]
+        attempts: list[tuple[str, str]] = []
+        rate_limited: set[str] = set()
+        for target in available + cooled:
+            if target.provider.id in rate_limited:
+                continue
+            api_key = target.provider.api_key(self.env)
+            if api_key is None and not target.provider.keyless:
+                continue
+            gen = _client.stream_call(
+                target.provider,
+                target.model,
+                messages,
+                api_key=api_key,
+                env=self.env,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                stream_post=self._stream_post,
+            )
+            try:
+                first = next(gen)  # triggers connection + status check
+            except StopIteration:
+                attempts.append((target.name, "empty stream"))
+                continue
+            except ProviderHTTPError as exc:
+                if exc.status == 429:
+                    self._mark_cooldown(target.provider.id, now)
+                    rate_limited.add(target.provider.id)
+                attempts.append((target.name, str(exc)))
+                continue
+            except Exception as exc:  # noqa: BLE001
+                attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
+                continue
+
+            self.quota.record(target.provider.id, target.model)
+            self.stats["requests"] += 1
+            yield {"provider": target.provider.id, "model": target.model}
+            yield first
+            yield from gen
+            return
 
         raise AllProvidersExhausted(attempts)

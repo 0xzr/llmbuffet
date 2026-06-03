@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-06-03
+
+### Added
+- **True token streaming.** The proxy now streams tokens from the provider in
+  real time (`stream: true`) instead of buffering — with failover *before* the
+  first byte. `Pool.stream_chat()` exposed for library use. Live-verified (15
+  incremental chunks on Groq). Tool-calling requests still use the buffered path.
+- **`freellmpool code <agent>`** — prints one-command setup to wire a coding
+  agent (codex, aider, cline, continue, cursor, opencode) to the free proxy.
+
 ## [0.6.0] — 2026-06-03
 
 ### Added

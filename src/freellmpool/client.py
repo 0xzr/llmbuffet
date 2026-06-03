@@ -56,8 +56,13 @@ class HTTPResult:
 
 
 PostFn = Callable[[str, dict, dict, float], HTTPResult]
+# A streaming transport returns (status, iterable-of-SSE-lines). The iterable
+# keeps the connection open until exhausted/closed.
+from collections.abc import Iterable, Iterator  # noqa: E402
 
-_USER_AGENT = "freellmpool/0.6 (+https://github.com/0xzr/freellmpool)"
+StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
+
+_USER_AGENT = "freellmpool/0.7 (+https://github.com/0xzr/freellmpool)"
 
 
 def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
@@ -71,6 +76,84 @@ def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HT
     except (json.JSONDecodeError, ValueError):
         body = {}
     return HTTPResult(status=resp.status_code, body=body, text=resp.text)
+
+
+def default_stream_post(url: str, headers: dict, json_body: dict, timeout: float):
+    """Open a streaming POST and return (status, line_iterator). The iterator
+    keeps the httpx connection open and closes it when exhausted."""
+    import httpx
+
+    headers = {"User-Agent": _USER_AGENT, **headers}
+    client = httpx.Client(timeout=timeout)
+    cm = client.stream("POST", url, headers=headers, json=json_body)
+    resp = cm.__enter__()
+
+    def lines() -> Iterator[str]:
+        try:
+            yield from resp.iter_lines()
+        finally:
+            cm.__exit__(None, None, None)
+            client.close()
+
+    return resp.status_code, lines()
+
+
+def stream_call(
+    provider: Provider,
+    model: str,
+    messages: list[Message],
+    *,
+    api_key: str | None,
+    env: dict[str, str],
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    timeout: float = 90.0,
+    stream_post: StreamPostFn = default_stream_post,
+) -> Iterator[str]:
+    """Stream content deltas from an OpenAI-shape provider.
+
+    Raises :class:`ProviderHTTPError` on the first iteration if the provider did
+    not return 200 — so the router can still fail over *before* any bytes are
+    sent to the client. Once tokens start flowing there is no mid-stream failover.
+    """
+    base_url = provider.base_url
+    if provider.adapter == "cloudflare":
+        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+    url = f"{base_url}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    body = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": True,
+    }
+    status, line_iter = stream_post(url, headers, body, timeout)
+    if status != 200:
+        close = getattr(line_iter, "close", None)
+        if close:
+            close()
+        raise ProviderHTTPError(status, f"HTTP {status}", retryable=_retryable(status))
+    for line in line_iter:
+        if not line:
+            continue
+        if line.startswith("data:"):
+            line = line[len("data:") :]
+        line = line.strip()
+        if not line or line == "[DONE]":
+            if line == "[DONE]":
+                break
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        choices = obj.get("choices") or [{}]
+        delta = (choices[0].get("delta") or {}).get("content")
+        if delta:
+            yield delta
 
 
 def _retryable(status: int) -> bool:

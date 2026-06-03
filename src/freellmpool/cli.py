@@ -198,6 +198,21 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_code(args: argparse.Namespace) -> int:
+    from .agents import list_agents, render
+
+    if not args.agent:
+        print(list_agents())
+        return 0
+    out = render(args.agent.lower())
+    if out is None:
+        print(f"freellmpool: unknown agent '{args.agent}'\n", file=sys.stderr)
+        print(list_agents(), file=sys.stderr)
+        return 3
+    print(out)
+    return 0
+
+
 def cmd_mcp(args: argparse.Namespace) -> int:
     from .mcp_server import serve_stdio  # lazy import
 
@@ -264,6 +279,12 @@ def build_parser() -> argparse.ArgumentParser:
         "mcp", help="run an MCP server (stdio) so MCP clients can use free models"
     )
     p_mcp.set_defaults(func=cmd_mcp)
+
+    p_code = sub.add_parser(
+        "code", help="wire a coding agent (codex/aider/cline/...) to free models"
+    )
+    p_code.add_argument("agent", nargs="?", help="agent id (omit to list)")
+    p_code.set_defaults(func=cmd_code)
 
     return parser
 

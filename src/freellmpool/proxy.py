@@ -12,7 +12,8 @@ freellmpool pulls in nothing beyond httpx.
 
 Supported routes:
     GET  /v1/models                 list available (provider/model) ids
-    POST /v1/chat/completions       route a chat completion
+    POST /v1/chat/completions       route a chat completion (true token streaming)
+    POST /v1/embeddings             pooled free embeddings
     POST /v1/responses              Responses API shim (Codex CLI / agents)
     GET  /healthz                   liveness probe
 """
@@ -38,7 +39,7 @@ def _model_ids(pool: Pool) -> list[str]:
 
 def make_handler(pool: Pool, api_key: str | None = None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "freellmpool/0.6"
+        server_version = "freellmpool/0.7"
 
         # quiet by default; the server prints its own concise log line
         def log_message(self, format, *args):  # noqa: A002
@@ -203,6 +204,10 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 return
             norm = _normalize_messages(messages)
             tools = req.get("tools") if isinstance(req.get("tools"), list) else None
+            # True token streaming for plain chat; tools/stream falls back to buffered.
+            if req.get("stream") and not tools:
+                self._stream_chat(req, norm)
+                return
             reply = self._resolve(req, norm, tools=tools, tool_choice=req.get("tool_choice"))
             if reply is None:
                 return
@@ -210,6 +215,61 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._send_sse(_sse_chunks(reply))
             else:
                 self._send(200, _to_openai_response(reply), headers=_obs_headers(reply))
+
+        def _stream_chat(self, req: dict, norm: list[dict]) -> None:
+            requested = req.get("model") or "auto"
+            if not isinstance(requested, str):
+                self._error(400, "'model' must be a string", "invalid_request_error")
+                return
+            provider_filter, model_filter = _parse_model(
+                resolve_alias(requested, pool.env), {p.id for p in pool.providers}
+            )
+            try:
+                max_tokens = int(req.get("max_tokens") or 1024)
+                temp_raw = req.get("temperature")
+                temperature = 0.0 if temp_raw is None else float(temp_raw)
+            except (TypeError, ValueError):
+                self._error(
+                    400, "'max_tokens'/'temperature' must be numbers", "invalid_request_error"
+                )
+                return
+            try:
+                gen = pool.stream_chat(
+                    norm,
+                    model=model_filter,
+                    providers=provider_filter,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                meta = next(gen)  # provider/model chosen, or raises before any bytes
+            except NoProvidersConfigured as exc:
+                self._error(503, str(exc), "no_providers")
+                return
+            except (AllProvidersExhausted, StopIteration):
+                # nothing streamable succeeded — fall back to a buffered completion
+                reply = self._resolve(req, norm)
+                if reply is not None:
+                    self._send_sse(_sse_chunks(reply))
+                return
+
+            provider_id = meta["provider"] if isinstance(meta, dict) else "auto"
+            model_name = meta["model"] if isinstance(meta, dict) else "auto"
+            cid = f"chatcmpl-freellmpool-{provider_id}"
+            model_id = f"{provider_id}/{model_name}"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                self.wfile.write(_chunk_block(cid, model_id, role="assistant").encode())
+                for delta in gen:
+                    self.wfile.write(_chunk_block(cid, model_id, content=delta).encode())
+                self.wfile.write(_chunk_block(cid, model_id, finish="stop").encode())
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
+                pass
 
         def _handle_responses(self, req: dict) -> None:
             """Minimal OpenAI Responses API (/v1/responses) shim for Codex CLI
@@ -333,6 +393,21 @@ def _to_openai_response(reply) -> dict:
         },
         "x_freellmpool": {"provider": reply.provider_id, "model": reply.model},
     }
+
+
+def _chunk_block(cid: str, model_id: str, *, role=None, content=None, finish=None) -> str:
+    delta: dict = {}
+    if role is not None:
+        delta["role"] = role
+    if content is not None:
+        delta["content"] = content
+    chunk = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "model": model_id,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
 
 
 def _sse_chunks(reply):

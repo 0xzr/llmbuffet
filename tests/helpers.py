@@ -19,6 +19,37 @@ def gemini_body(text: str) -> dict:
     }
 
 
+def make_stream_post(script=None):
+    """Fake streaming transport: (url, headers, body, timeout) -> (status, lines).
+
+    ``script`` maps url-substring -> (status, [deltas]) or [deltas]. Default:
+    200 with a single "ok" content delta.
+    """
+    import json as _json
+
+    calls: list[dict] = []
+
+    def stream_post(url, headers, body, timeout):
+        calls.append({"url": url, "body": body})
+        rule = None
+        for needle, value in (script or {}).items():
+            if needle in url:
+                rule = value
+                break
+        if rule is None:
+            status, deltas = 200, ["ok"]
+        elif isinstance(rule, tuple):
+            status, deltas = rule
+        else:
+            status, deltas = 200, rule
+        lines = ["data: " + _json.dumps({"choices": [{"delta": {"content": d}}]}) for d in deltas]
+        lines.append("data: [DONE]")
+        return status, iter(lines)
+
+    stream_post.calls = calls
+    return stream_post
+
+
 def make_post(script):
     """Build a fake `post` callable for the client/router.
 

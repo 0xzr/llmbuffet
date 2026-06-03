@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 
 import pytest
-from helpers import make_post
+from helpers import make_post, make_stream_post
 
 from freellmpool.proxy import _parse_model, serve
 from freellmpool.router import Pool
@@ -17,7 +17,7 @@ from freellmpool.router import Pool
 @pytest.fixture
 def server(providers, env, quota):
     post = make_post({})
-    pool = Pool(providers, quota=quota, env=env, post=post)
+    pool = Pool(providers, quota=quota, env=env, post=post, stream_post=make_stream_post({}))
     httpd = serve(pool, host="127.0.0.1", port=0)  # port 0 = ephemeral
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from helpers import gemini_body, make_post, openai_body
+from helpers import gemini_body, make_post, make_stream_post, openai_body
 
 from freellmpool.errors import AllProvidersExhausted, NoProvidersConfigured
 from freellmpool.router import Pool
@@ -137,6 +137,33 @@ def test_empty_completion_is_failure(providers, env, quota):
     pool = Pool(providers, quota=quota, env=env, post=post)
     reply = pool.ask("hi", providers=["alpha", "beta"])
     assert reply.provider_id == "beta"  # empty alpha skipped
+
+
+def test_stream_chat_yields_meta_then_deltas(providers, env, quota):
+    sp = make_stream_post({"alpha.test": (200, ["Hel", "lo"])})
+    pool = Pool(providers, quota=quota, env=env, stream_post=sp)
+    gen = pool.stream_chat([{"role": "user", "content": "hi"}], providers=["alpha"])
+    meta = next(gen)
+    assert meta["provider"] == "alpha"
+    assert "".join(gen) == "Hello"
+
+
+def test_stream_chat_failover_before_first_byte(providers, env, quota):
+    sp = make_stream_post({"alpha.test": (500, []), "beta.test": (200, ["ok"])})
+    pool = Pool(providers, quota=quota, env=env, stream_post=sp)
+    gen = pool.stream_chat([{"role": "user", "content": "hi"}], providers=["alpha", "beta"])
+    meta = next(gen)
+    assert meta["provider"] == "beta"  # alpha 500 → failed over before streaming
+    assert "".join(gen) == "ok"
+
+
+def test_stream_chat_skips_gemini(providers, env, quota):
+    # 'gee' is a gemini-adapter provider → excluded from streaming
+    sp = make_stream_post({})
+    pool = Pool(providers, quota=quota, env=env, stream_post=sp)
+    gen = pool.stream_chat([{"role": "user", "content": "hi"}], providers=["gee"])
+    with pytest.raises(NoProvidersConfigured):
+        next(gen)
 
 
 def test_tool_calls_reply_is_success(providers, env, quota):
