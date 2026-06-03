@@ -7,6 +7,7 @@ Works with no API keys.
 [![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
 [![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/docs-0xzr.github.io%2Ffreellmpool-6ea8ff)](https://0xzr.github.io/freellmpool/)
 
 ![demo](assets/demo.svg)
 
@@ -151,7 +152,13 @@ $ freellmpool benchmark
 
 `freellmpool mcp` runs a Model Context Protocol server over stdio, so Claude
 Desktop, Claude Code, or Cursor can hand subtasks to free models. See
-[docs/MCP.md](docs/MCP.md).
+[docs/MCP.md](docs/MCP.md). A [`server.json`](server.json) is included for the
+[MCP registry](https://registry.modelcontextprotocol.io/).
+
+## In Simon Willison's `llm` CLI
+
+There's a plugin: `llm install llm-freellmpool` → `llm -m freellmpool "..."` with
+no API key. Source: [0xzr/llm-freellmpool](https://github.com/0xzr/llm-freellmpool).
 
 ## Provider keys
 

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.0xzr/freellmpool",
+  "title": "freellmpool",
+  "description": "Pool the free tiers of 16 LLM providers; the MCP server exposes free_llm_ask/models/quota.",
+  "websiteUrl": "https://0xzr.github.io/freellmpool/",
+  "repository": {
+    "url": "https://github.com/0xzr/freellmpool",
+    "source": "github"
+  },
+  "version": "0.10.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "freellmpool",
+      "version": "0.10.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
