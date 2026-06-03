@@ -9,7 +9,12 @@
 
 ![freellmpool demo](assets/demo.svg)
 
-> One free tier is a toy. **Sixteen, stacked, are tens of thousands of free requests a day.** Point your OpenAI client at `freellmpool` and stop paying for a hobby project's inference.
+> One free tier is a toy. **Sixteen, stacked, are tens of thousands of free requests a day.** And unlike a self-hosted gateway, freellmpool is just `pip install` — a CLI, a Python library, *and* a proxy — that works with **no keys, no Docker, no setup**.
+
+```bash
+pip install freellmpool
+freellmpool ask "Explain the CAP theorem in one sentence."   # ← real answer, zero keys
+```
 
 Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare Workers AI, Mistral, Cohere, and more each hand out a generous **free tier** — but each has its own SDK, rate limits, and daily cap. `freellmpool` puts all of them into one pool:
 
@@ -18,7 +23,19 @@ Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare
 - 🔁 **Automatic failover.** Rate-limited or 5xx on one provider? `freellmpool` transparently rolls to the next, with a cooldown so it stops hammering a throttled pool.
 - 📊 **Quota-aware routing.** Spreads load least-used-first and respects each free daily limit, so you squeeze the most out of every tier.
 - 🤖 **Built for agents.** Streaming (SSE), a Codex/Responses shim, and mid-run failover — exactly where long agent loops usually die.
+- 🧠 **Chat + embeddings.** Pooled free `/v1/embeddings` too (`pool.embed(...)`) — free RAG, not just chat.
 - 🪶 **Tiny.** Pure-Python, one dependency (`httpx`). The proxy runs on the standard library. No keys are ever stored in the repo.
+
+## Use it four ways
+
+| | |
+|---|---|
+| **CLI** | `freellmpool ask "..."` — pipe stdin in, `--json` out |
+| **Library** | `from freellmpool import Pool` — `pool.ask(...)`, `pool.embed(...)` |
+| **Proxy** | `freellmpool proxy` — a drop-in `OPENAI_BASE_URL` for any tool |
+| **`llm` plugin** | `llm install llm-freellmpool` → `llm -m freellmpool "..."` |
+
+It's not a server you have to host with keys you have to manage — it's a client that just works.
 
 ---
 
@@ -187,7 +204,19 @@ pool = Pool.from_default_config()
 reply = pool.ask("Summarize the plot of Hamlet in 20 words.")
 print(reply.text)
 print(f"served by {reply.provider_id}/{reply.model}")
+
+# Pooled free embeddings too — free RAG in a couple lines:
+vecs = pool.embed(["first document", "second document"]).vectors
 ```
+
+## Correct by design
+
+freellmpool aims to be a *faithful* OpenAI drop-in, so agents and SDKs don't trip over edge cases:
+
+- **Fails over on errors** (incl. provider tool-call errors) instead of returning a hard `400`.
+- **Accepts assistant messages with empty/null content** + `tool_calls` (doesn't reject them).
+- **Respects each provider's own per-day free limit** in its quota tracking, not a single global guess.
+- **Skips a rate-limited provider's other models** for that request, with a cooldown so it stops hammering a throttled pool.
 
 ## How routing works
 

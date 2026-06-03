@@ -76,3 +76,13 @@ class Reply:
 
     def __str__(self) -> str:  # pragma: no cover - convenience
         return self.text
+
+
+@dataclass
+class EmbedReply:
+    """A normalized embeddings result from some provider."""
+
+    vectors: list[list[float]]
+    provider_id: str
+    model: str
+    prompt_tokens: int | None = None

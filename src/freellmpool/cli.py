@@ -17,6 +17,7 @@ from .config import configured_providers, load_catalog, resolve_alias, settings
 from .errors import AllProvidersExhausted, NoProvidersConfigured
 from .quota import QuotaStore
 from .router import Pool
+from .savings import format_saved
 
 
 def _read_stdin() -> str:
@@ -74,7 +75,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
         text = _strip_fences(text)
     print(text)
     if args.verbose:
-        print(f"\n[served by {reply.provider_id}/{reply.model}]", file=sys.stderr)
+        saved = format_saved(reply.prompt_tokens, reply.completion_tokens)
+        print(
+            f"\n[served by {reply.provider_id}/{reply.model} · {saved}]",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -182,7 +187,12 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nfreellmpool: shutting down", file=sys.stderr)
+        s = pool.stats
+        saved = format_saved(s["prompt_tokens"], s["completion_tokens"])
+        print(
+            f"\nfreellmpool: shutting down — served {s['requests']} requests · {saved}",
+            file=sys.stderr,
+        )
     finally:
         httpd.server_close()
     return 0

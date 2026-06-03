@@ -38,7 +38,7 @@ def _model_ids(pool: Pool) -> list[str]:
 
 def make_handler(pool: Pool, api_key: str | None = None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "freellmpool/0.4"
+        server_version = "freellmpool/0.5"
 
         # quiet by default; the server prints its own concise log line
         def log_message(self, format, *args):  # noqa: A002
@@ -93,7 +93,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
             route = self.path.rstrip("/")
             is_chat = route.endswith("/v1/chat/completions") or route == "/chat/completions"
             is_responses = route.endswith("/v1/responses") or route == "/responses"
-            if not (is_chat or is_responses):
+            is_embeddings = route.endswith("/v1/embeddings") or route == "/embeddings"
+            if not (is_chat or is_responses or is_embeddings):
                 self._error(404, f"unknown route {self.path}", "not_found")
                 return
             if not self._authorized():
@@ -115,10 +116,46 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._error(400, "request body must be a JSON object", "invalid_request_error")
                 return
 
-            if is_responses:
+            if is_embeddings:
+                self._handle_embeddings(req)
+            elif is_responses:
                 self._handle_responses(req)
             else:
                 self._handle_chat(req)
+
+        def _handle_embeddings(self, req: dict) -> None:
+            data = req.get("input")
+            if isinstance(data, str):
+                inputs = [data]
+            elif isinstance(data, list) and all(isinstance(x, str) for x in data):
+                inputs = data
+            else:
+                self._error(
+                    400, "'input' must be a string or array of strings", "invalid_request_error"
+                )
+                return
+            if not inputs:
+                self._error(400, "'input' is required", "invalid_request_error")
+                return
+            requested = req.get("model")
+            # "auto"/empty/provider-prefixed → let the pool pick any embedder
+            if (
+                isinstance(requested, str)
+                and requested not in ("", "auto")
+                and "/" not in requested
+            ):
+                model = requested
+            else:
+                model = None
+            try:
+                reply = pool.embed(inputs, model=model)
+            except NoProvidersConfigured as exc:
+                self._error(503, str(exc), "no_providers")
+                return
+            except AllProvidersExhausted as exc:
+                self._error(502, str(exc), "all_providers_exhausted")
+                return
+            self._send(200, _to_embeddings_response(reply))
 
         def _resolve(self, req: dict, messages: list[dict], *, tools=None, tool_choice=None):
             """Shared: resolve model/params and call the pool. Returns a Reply or
@@ -259,6 +296,22 @@ def _obs_headers(reply) -> dict:
         "X-Freellmpool-Provider": reply.provider_id,
         "X-Freellmpool-Model": reply.model,
         "X-Freellmpool-Attempts": reply.attempts,
+    }
+
+
+def _to_embeddings_response(reply) -> dict:
+    return {
+        "object": "list",
+        "data": [
+            {"object": "embedding", "index": i, "embedding": vec}
+            for i, vec in enumerate(reply.vectors)
+        ],
+        "model": f"{reply.provider_id}/{reply.model}",
+        "usage": {
+            "prompt_tokens": reply.prompt_tokens or 0,
+            "total_tokens": reply.prompt_tokens or 0,
+        },
+        "x_freellmpool": {"provider": reply.provider_id, "model": reply.model},
     }
 
 

@@ -10,16 +10,17 @@ Public API:
 """
 
 from .errors import AllProvidersExhausted, BuffetError, NoProvidersConfigured
-from .models import Model, Provider, Reply
+from .models import EmbedReply, Model, Provider, Reply
 from .router import Pool
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "Pool",
     "Provider",
     "Model",
     "Reply",
+    "EmbedReply",
     "BuffetError",
     "NoProvidersConfigured",
     "AllProvidersExhausted",

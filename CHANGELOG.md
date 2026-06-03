@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-06-03
+
+### Added
+- **Pooled free embeddings** — `pool.embed(...)` and a proxy `/v1/embeddings`
+  route over Cohere / GitHub Models / Cloudflare / Mistral / NVIDIA free tiers,
+  with failover. (Free RAG, not just chat.) Live-verified.
+- **`llm-freellmpool` plugin** for Simon Willison's [`llm`](https://llm.datasette.io)
+  CLI — `llm install llm-freellmpool` → `llm -m freellmpool "..."` (zero keys).
+- **`config.toml`** support: `[keys]` (filled under env), `[aliases]`, `[settings]`
+  (`cooldown_seconds`, `proxy_key`). See `config.toml.example`.
+- **Docker**: image + GHCR build/push workflow + `docker-compose.yml` (freellmpool
+  + Open WebUI). Built and run-tested locally.
+- **"$ saved vs OpenAI" metric** — `freellmpool ask -v` and the proxy shutdown
+  line show avoided GPT-4o cost.
+- README repositioned around the developer wedge (CLI + library + proxy + `llm`
+  plugin, keyless) with a "correct by design" section; terminal demo at the top.
+
 ## [0.4.0] — 2026-06-03
 
 ### Added

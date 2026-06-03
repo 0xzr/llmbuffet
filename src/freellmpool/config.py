@@ -116,9 +116,9 @@ def settings(env: dict[str, str] | None = None) -> dict:
     return load_config_file(env).get("settings", {})
 
 
-def _parse_catalog(data: dict) -> list[Provider]:
+def _parse_rows(rows: list) -> list[Provider]:
     providers: list[Provider] = []
-    for row in data.get("provider", []):
+    for row in rows:
         models = tuple(
             Model(name=m["name"], rpd=int(m.get("rpd", 0))) for m in row.get("models", [])
         )
@@ -136,6 +136,25 @@ def _parse_catalog(data: dict) -> list[Provider]:
             )
         )
     return providers
+
+
+def _parse_catalog(data: dict) -> list[Provider]:
+    return _parse_rows(data.get("provider", []))
+
+
+def load_embedders(path: Path | None = None) -> list[Provider]:
+    """Load the embedder catalog ([[embedder]] rows). Same shape as providers."""
+    base_path = path or _PACKAGED_CATALOG
+    with base_path.open("rb") as fh:
+        return _parse_rows(tomllib.load(fh).get("embedder", []))
+
+
+def configured_embedders(
+    catalog: list[Provider] | None = None, env: dict[str, str] | None = None
+) -> list[Provider]:
+    catalog = catalog if catalog is not None else load_embedders()
+    env = env if env is not None else dict(os.environ)
+    return [p for p in catalog if p.is_configured(env)]
 
 
 def load_catalog(path: Path | None = None) -> list[Provider]:

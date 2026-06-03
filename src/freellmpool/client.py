@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .errors import ProviderHTTPError
-from .models import Provider, Reply
+from .models import EmbedReply, Provider, Reply
 
 Message = dict[str, str]
 
@@ -57,7 +57,7 @@ class HTTPResult:
 
 PostFn = Callable[[str, dict, dict, float], HTTPResult]
 
-_USER_AGENT = "freellmpool/0.4 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = "freellmpool/0.5 (+https://github.com/0xzr/freellmpool)"
 
 
 def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
@@ -212,6 +212,45 @@ def _call_openai(
         prompt_tokens=usage.get("prompt_tokens"),
         completion_tokens=usage.get("completion_tokens"),
         message=message if isinstance(message, dict) else None,
+    )
+
+
+def embed(
+    provider: Provider,
+    model: str,
+    inputs: list[str],
+    *,
+    api_key: str | None,
+    env: dict[str, str],
+    timeout: float = 90.0,
+    post: PostFn = default_post,
+) -> EmbedReply:
+    """Dispatch an embeddings request (OpenAI ``/embeddings`` shape)."""
+    base_url = provider.base_url
+    if provider.adapter == "cloudflare" or "{account_id}" in base_url:
+        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+    url = f"{base_url}/embeddings"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    body = {"model": model, "input": inputs, "encoding_format": "float"}
+    result = post(url, headers, body, timeout)
+    if result.status != 200:
+        raise ProviderHTTPError(
+            result.status, _err_message(result), retryable=_retryable(result.status)
+        )
+    data = result.body.get("data") or []
+    if not data:
+        raise ProviderHTTPError(502, "no embeddings in response", retryable=True)
+    vectors = [row.get("embedding") or [] for row in data]
+    if not all(vectors):
+        raise ProviderHTTPError(502, "empty embedding vector", retryable=True)
+    usage = result.body.get("usage") or {}
+    return EmbedReply(
+        vectors=vectors,
+        provider_id=provider.id,
+        model=model,
+        prompt_tokens=usage.get("prompt_tokens"),
     )
 
 
