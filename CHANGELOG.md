@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.2] — 2026-06-03
+
+### Changed (performance)
+- **Connection pooling.** Requests now reuse a process-wide keep-alive httpx
+  client instead of opening a fresh TCP+TLS connection per call. Big latency win
+  for repeated calls to the same provider (agent loops, the proxy): ~0.15s/call
+  warm vs a full handshake each time.
+- **Fast-fail connect timeout (10s)** so a dead/unreachable provider fails over
+  quickly instead of waiting the full read timeout.
+- `_order` snapshots quota once per request instead of a locked read per
+  candidate — matters now that the catalog has 300+ models.
+
 ## [0.9.1] — 2026-06-03
 
 ### Changed

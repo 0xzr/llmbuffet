@@ -65,13 +65,37 @@ StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 
 _USER_AGENT = "freellmpool/0.9 (+https://github.com/0xzr/freellmpool)"
 
+_CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
+_shared = None  # one pooled, keep-alive httpx.Client shared across calls/threads
 
-def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
-    """Real network POST via httpx. Imported lazily so tests need no httpx."""
+
+def _client():
+    """A process-wide pooled httpx.Client. Reusing connections (keep-alive) avoids
+    a TCP+TLS handshake on every request — a big win for repeated calls to the
+    same provider (agent loops). httpx.Client is thread-safe."""
+    global _shared
+    if _shared is None:
+        import httpx
+
+        _shared = httpx.Client(
+            headers={"User-Agent": _USER_AGENT},
+            limits=httpx.Limits(
+                max_keepalive_connections=20, max_connections=100, keepalive_expiry=30.0
+            ),
+            follow_redirects=True,
+        )
+    return _shared
+
+
+def _timeout(timeout: float):
     import httpx
 
-    headers = {"User-Agent": _USER_AGENT, **headers}
-    resp = httpx.post(url, headers=headers, json=json_body, timeout=timeout)
+    return httpx.Timeout(timeout, connect=min(_CONNECT_TIMEOUT, timeout))
+
+
+def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
+    """Real network POST via the pooled httpx client."""
+    resp = _client().post(url, headers=headers, json=json_body, timeout=_timeout(timeout))
     try:
         body = resp.json()
     except (json.JSONDecodeError, ValueError):
@@ -80,12 +104,13 @@ def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HT
 
 
 class _StreamLines:
-    """An explicitly-closeable line iterator that owns the httpx stream + client,
-    so the connection is released on exhaustion, early close, OR non-200 (where
-    the caller closes it before ever iterating)."""
+    """An explicitly-closeable line iterator over a streaming response, so the
+    connection is released back to the pool on exhaustion, early close, OR non-200
+    (where the caller closes it before ever iterating). Does NOT close the shared
+    client — only the response/stream."""
 
-    def __init__(self, cm, resp, client):
-        self._cm, self._resp, self._client = cm, resp, client
+    def __init__(self, cm, resp):
+        self._cm, self._resp = cm, resp
         self._closed = False
 
     def __iter__(self) -> Iterator[str]:
@@ -99,25 +124,16 @@ class _StreamLines:
             return
         self._closed = True
         try:
-            self._cm.__exit__(None, None, None)
+            self._cm.__exit__(None, None, None)  # releases the connection to the pool
         except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
-        self._client.close()
 
 
 def default_stream_post(url: str, headers: dict, json_body: dict, timeout: float):
-    """Open a streaming POST and return (status, closeable line iterator)."""
-    import httpx
-
-    headers = {"User-Agent": _USER_AGENT, **headers}
-    client = httpx.Client(timeout=timeout)
-    cm = client.stream("POST", url, headers=headers, json=json_body)
-    try:
-        resp = cm.__enter__()
-    except BaseException:
-        client.close()
-        raise
-    return resp.status_code, _StreamLines(cm, resp, client)
+    """Open a streaming POST on the pooled client and return (status, line iter)."""
+    cm = _client().stream("POST", url, headers=headers, json=json_body, timeout=_timeout(timeout))
+    resp = cm.__enter__()
+    return resp.status_code, _StreamLines(cm, resp)
 
 
 def stream_call(

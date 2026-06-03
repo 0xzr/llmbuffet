@@ -177,8 +177,11 @@ class Pool:
         (they may still be tried if everything else fails).
         """
 
+        # One snapshot instead of a locked read per target (matters for large catalogs).
+        snap = self.quota.snapshot()
+
         def sort_key(t: Target) -> tuple[int, int]:
-            used = self.quota.used(t.provider.id, t.model)
+            used = int(snap.get(f"{t.provider.id}::{t.model}", 0))
             over = 1 if (t.rpd > 0 and used >= t.rpd) else 0
             return (over, used)
 

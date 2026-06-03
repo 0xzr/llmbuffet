@@ -150,3 +150,15 @@ def test_stream_call_closes_on_exhaustion():
     )
     assert out == ["x", "y"]
     assert spy.closed is True
+
+
+# ---- connection pooling plumbing (no network) ----
+
+def test_shared_client_is_singleton():
+    assert C._client() is C._client()  # one pooled client reused across calls
+
+
+def test_timeout_has_fast_connect():
+    to = C._timeout(90.0)
+    assert to.read == 90.0 and to.connect == 10.0  # fast-fail connect
+    assert C._timeout(3.0).connect == 3.0  # connect never exceeds the overall timeout
