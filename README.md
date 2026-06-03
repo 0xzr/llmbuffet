@@ -28,6 +28,24 @@ partition tolerance at the same time.
 
 Add keys for the other providers to unlock more models and higher limits.
 
+## Run a coding agent on free models
+
+freellmpool's proxy speaks both the OpenAI and the Anthropic API, so coding agents
+run against pooled free tiers with no code changes — just point them at the proxy:
+
+```bash
+freellmpool proxy                       # starts http://localhost:8080
+freellmpool code claude                 # prints the one-line setup for Claude Code
+# (also: codex, aider, cline, continue, cursor, opencode)
+```
+
+Your existing OpenAI/Anthropic apps work the same way — set `OPENAI_BASE_URL` (or
+`ANTHROPIC_BASE_URL`) to the proxy and keep your code unchanged.
+
+**New in 0.10:** an async API (`AsyncPool`), an MCP server (`freellmpool mcp`),
+latency-aware routing with `freellmpool benchmark`, observability hooks, and a
+plugin system for custom providers. See the [changelog](CHANGELOG.md).
+
 ## Install
 
 ```bash
