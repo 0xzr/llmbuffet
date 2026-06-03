@@ -15,6 +15,7 @@ router and adapters can be unit-tested without touching the network.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -22,6 +23,29 @@ from .errors import ProviderHTTPError
 from .models import Provider, Reply
 
 Message = dict[str, str]
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+# Reasoning models burn output budget on hidden reasoning; give them headroom
+# if the caller left max_tokens at a small default.
+_THINKING_HINTS = (
+    "glm-4.7",
+    "-r1",
+    "reasoning",
+    "thinking",
+    "magistral",
+    "deepseek-r1",
+    "nemotron",
+)
+_THINKING_FLOOR = 8192
+
+
+def _is_thinking(model: str) -> bool:
+    m = model.lower()
+    return any(h in m for h in _THINKING_HINTS)
+
+
+def _strip_think(text: str) -> str:
+    return _THINK_RE.sub("", text).strip()
 
 
 @dataclass
@@ -97,6 +121,10 @@ def call(
 
     Raises :class:`ProviderHTTPError` on a non-200 status.
     """
+    if _is_thinking(model) and max_tokens < _THINKING_FLOOR:
+        # Give reasoning models room so hidden reasoning doesn't eat the whole
+        # budget and return empty content.
+        max_tokens = _THINKING_FLOOR
     if provider.adapter == "gemini":
         return _call_gemini(
             provider,
@@ -160,7 +188,7 @@ def _call_openai(
     if not choices:
         raise ProviderHTTPError(502, "no choices in response", retryable=True)
     message = choices[0].get("message") or {}
-    text = (message.get("content") or "").strip()
+    text = _strip_think(message.get("content") or "")
     usage = result.body.get("usage") or {}
     return Reply(
         text=text,
@@ -209,7 +237,7 @@ def _call_gemini(
     if not candidates:
         raise ProviderHTTPError(502, "no candidates in response", retryable=True)
     parts = (candidates[0].get("content") or {}).get("parts") or []
-    text = "".join(p.get("text", "") for p in parts).strip()
+    text = _strip_think("".join(p.get("text", "") for p in parts))
     usage = result.body.get("usageMetadata") or {}
     return Reply(
         text=text,

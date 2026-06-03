@@ -9,7 +9,8 @@ and per-day budgets as it goes.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from . import client as _client
@@ -41,11 +42,17 @@ class Buffet:
         quota: QuotaStore | None = None,
         env: dict[str, str] | None = None,
         post: PostFn = default_post,
+        cooldown_seconds: float = 60.0,
+        clock: Callable[[], float] | None = None,
     ):
         self.providers = providers
         self.quota = quota or QuotaStore()
         self.env = env if env is not None else dict(os.environ)
         self._post = post
+        self.cooldown_seconds = cooldown_seconds
+        self._clock = clock or time.monotonic
+        # provider_id -> monotonic time until which to deprioritize after a 429
+        self._cooldown_until: dict[str, float] = {}
 
     # ---- construction -------------------------------------------------
 
@@ -145,8 +152,15 @@ class Buffet:
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
+        # Providers recently rate-limited (429) are tried last, not skipped — so
+        # a transient cooldown never makes a request fail outright.
+        now = self._clock()
+        available = [t for t in targets if self._cooldown_until.get(t.provider.id, 0.0) <= now]
+        cooled = [t for t in targets if self._cooldown_until.get(t.provider.id, 0.0) > now]
+        sequence = available + cooled
+
         attempts: list[tuple[str, str]] = []
-        for target in targets:
+        for target in sequence:
             api_key = target.provider.api_key(self.env)
             if api_key is None and not target.provider.keyless:  # pragma: no cover
                 attempts.append((target.name, "missing api key"))
@@ -164,6 +178,8 @@ class Buffet:
                     post=self._post,
                 )
             except ProviderHTTPError as exc:
+                if exc.status == 429:
+                    self._cooldown_until[target.provider.id] = now + self.cooldown_seconds
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # network error, etc. — try the next one

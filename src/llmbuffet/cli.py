@@ -43,11 +43,16 @@ def cmd_ask(args: argparse.Namespace) -> int:
         provider_filter = [prov]
         model_filter = mdl
 
+    system = args.system
+    if args.json:
+        json_rule = "Respond with a single valid JSON value and nothing else — no prose, no markdown fences."
+        system = f"{system}\n{json_rule}" if system else json_rule
+
     buffet = Buffet.from_default_config()
     try:
         reply = buffet.ask(
             prompt,
-            system=args.system,
+            system=system,
             model=model_filter,
             providers=provider_filter,
             max_tokens=args.max_tokens,
@@ -60,10 +65,23 @@ def cmd_ask(args: argparse.Namespace) -> int:
         print(f"llmbuffet: {exc}", file=sys.stderr)
         return 4
 
-    print(reply.text)
+    text = reply.text
+    if args.json:
+        text = _strip_fences(text)
+    print(text)
     if args.verbose:
         print(f"\n[served by {reply.provider_id}/{reply.model}]", file=sys.stderr)
     return 0
+
+
+def _strip_fences(text: str) -> str:
+    """Remove a leading ```json / ``` fence and trailing ``` if present."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[1] if "\n" in t else t[3:]
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3]
+    return t.strip()
 
 
 def cmd_providers(args: argparse.Namespace) -> int:
@@ -166,6 +184,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("-p", "--providers", help="comma-separated provider ids to allow")
     p_ask.add_argument("--max-tokens", type=int, default=1024)
     p_ask.add_argument("--temperature", type=float, default=0.0)
+    p_ask.add_argument(
+        "--json", action="store_true", help="ask for JSON output and strip code fences"
+    )
     p_ask.add_argument("-v", "--verbose", action="store_true", help="report which provider served")
     p_ask.set_defaults(func=cmd_ask)
 

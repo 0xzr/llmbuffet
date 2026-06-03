@@ -74,6 +74,26 @@ def test_content_parts_flattened(server):
     assert status == 200
 
 
+def test_streaming_sse(server):
+    req = urllib.request.Request(
+        server + "/v1/chat/completions",
+        data=json.dumps(
+            {"model": "auto", "stream": True, "messages": [{"role": "user", "content": "hi"}]}
+        ).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310
+        assert resp.headers["Content-Type"] == "text/event-stream"
+        raw = resp.read().decode()
+    assert raw.strip().endswith("[DONE]")
+    content = ""
+    for line in raw.splitlines():
+        if line.startswith("data: ") and "[DONE]" not in line:
+            chunk = json.loads(line[len("data: ") :])
+            content += chunk["choices"][0]["delta"].get("content", "")
+    assert content == "ok"
+
+
 def test_parse_model():
     ids = {"groq", "cerebras"}
     assert _parse_model("auto", ids) == (None, None)

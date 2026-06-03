@@ -101,6 +101,36 @@ def test_keyless_provider_sends_no_auth_header(providers, env, quota):
     assert "Authorization" not in post.calls[0]["headers"]
 
 
+def test_429_triggers_cooldown(providers, env, quota):
+    post = make_post(
+        {
+            "alpha.test": (429, {"error": {"message": "slow down"}}),
+            "beta.test": (200, openai_body("beta")),
+        }
+    )
+    buffet = Buffet(
+        providers, quota=quota, env=env, post=post, cooldown_seconds=60.0, clock=lambda: 100.0
+    )
+    r1 = buffet.ask("hi", providers=["alpha", "beta"])
+    assert r1.provider_id == "beta"
+    assert buffet._cooldown_until["alpha"] == 160.0  # 100 + 60s cooldown
+
+
+def test_cooldown_deprioritizes_within_window(providers, env, quota):
+    post = make_post({"alpha.test": (429, {}), "beta.test": (200, openai_body("beta"))})
+    buffet = Buffet(
+        providers, quota=quota, env=env, post=post, cooldown_seconds=60.0, clock=lambda: 20.0
+    )
+    buffet.ask("hi", providers=["alpha", "beta"])  # alpha 429 → cooled until t=80
+    # at t=20 alpha is still cooling; even though it's now usable + least-used,
+    # beta is tried first because alpha is in its cooldown window.
+    buffet._post = make_post(
+        {"alpha.test": (200, openai_body("alpha")), "beta.test": (200, openai_body("beta"))}
+    )
+    r2 = buffet.ask("hi", providers=["alpha", "beta"])
+    assert r2.provider_id == "beta"  # alpha deprioritized despite being usable now
+
+
 def test_empty_completion_is_failure(providers, env, quota):
     post = make_post({"alpha.test": (200, openai_body("")), "beta.test": (200, openai_body("x"))})
     buffet = Buffet(providers, quota=quota, env=env, post=post)

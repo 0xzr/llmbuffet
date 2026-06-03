@@ -111,7 +111,30 @@ def make_handler(buffet: Buffet):
                 self._error(500, str(exc), "llmbuffet_error")
                 return
 
-            self._send(200, _to_openai_response(reply))
+            if req.get("stream"):
+                self._send_sse(reply)
+            else:
+                self._send(200, _to_openai_response(reply))
+
+        def _send_sse(self, reply) -> None:
+            """Emit the completion as an OpenAI-style SSE stream.
+
+            This is a *buffered* stream: llmbuffet resolves the full completion
+            (with failover) first, then frames it as Server-Sent Events so that
+            clients which require ``stream: true`` work unchanged.
+            """
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                for chunk in _sse_chunks(reply):
+                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
+                pass
 
     return Handler
 
@@ -163,6 +186,20 @@ def _to_openai_response(reply) -> dict:
         },
         "x_llmbuffet": {"provider": reply.provider_id, "model": reply.model},
     }
+
+
+def _sse_chunks(reply):
+    """Yield OpenAI chat.completion.chunk dicts for a finished reply."""
+    cid = f"chatcmpl-llmbuffet-{reply.provider_id}"
+    model = f"{reply.provider_id}/{reply.model}"
+    base = {"id": cid, "object": "chat.completion.chunk", "model": model}
+    # role delta, then the content as one delta, then a stop chunk.
+    yield {**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
+    yield {
+        **base,
+        "choices": [{"index": 0, "delta": {"content": reply.text}, "finish_reason": None}],
+    }
+    yield {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
 
 
 def serve(buffet: Buffet, host: str = "127.0.0.1", port: int = 8080) -> ThreadingHTTPServer:
