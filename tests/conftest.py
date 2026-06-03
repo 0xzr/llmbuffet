@@ -37,6 +37,14 @@ def providers() -> list[Provider]:
             key_env="GEE_KEY",
             models=(Model("gee-flash", rpd=0),),
         ),
+        Provider(
+            id="free",
+            label="Keyless",
+            adapter="openai",
+            base_url="https://free.test/v1",
+            auth="none",
+            models=(Model("free-1", rpd=0),),
+        ),
     ]
 
 

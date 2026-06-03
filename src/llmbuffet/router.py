@@ -148,7 +148,7 @@ class Buffet:
         attempts: list[tuple[str, str]] = []
         for target in targets:
             api_key = target.provider.api_key(self.env)
-            if not api_key:  # pragma: no cover - filtered upstream
+            if api_key is None and not target.provider.keyless:  # pragma: no cover
                 attempts.append((target.name, "missing api key"))
                 continue
             try:

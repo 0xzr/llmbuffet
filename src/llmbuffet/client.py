@@ -86,7 +86,7 @@ def call(
     model: str,
     messages: list[Message],
     *,
-    api_key: str,
+    api_key: str | None,
     env: dict[str, str],
     max_tokens: int = 1024,
     temperature: float = 0.0,
@@ -127,7 +127,7 @@ def _call_openai(
     model: str,
     messages: list[Message],
     *,
-    api_key: str,
+    api_key: str | None,
     env: dict[str, str],
     max_tokens: int,
     temperature: float,
@@ -140,10 +140,9 @@ def _call_openai(
         base_url = base_url.replace("{account_id}", account_id)
 
     url = f"{base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:  # keyless providers (e.g. OVH anonymous) send no auth header
+        headers["Authorization"] = f"Bearer {api_key}"
     body = {
         "model": model,
         "messages": messages,
@@ -178,7 +177,7 @@ def _call_gemini(
     model: str,
     messages: list[Message],
     *,
-    api_key: str,
+    api_key: str | None,
     max_tokens: int,
     temperature: float,
     timeout: float,

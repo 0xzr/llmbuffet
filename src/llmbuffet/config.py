@@ -42,7 +42,9 @@ def _parse_catalog(data: dict) -> list[Provider]:
                 label=row.get("label", row["id"]),
                 adapter=row.get("adapter", "openai"),
                 base_url=row["base_url"].rstrip("/"),
-                key_env=row["key_env"],
+                key_env=row.get("key_env"),
+                auth=row.get("auth", "bearer"),
+                key_optional=bool(row.get("key_optional", False)),
                 models=models,
                 extra_env=tuple(row.get("extra_env", [])),
             )

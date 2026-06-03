@@ -33,7 +33,14 @@ def test_failover_skips_429(providers, env, quota):
 
 
 def test_all_exhausted_raises(providers, env, quota):
-    post = make_post({"alpha.test": (500, {}), "beta.test": (503, {}), "gee.test": (500, {})})
+    post = make_post(
+        {
+            "alpha.test": (500, {}),
+            "beta.test": (503, {}),
+            "gee.test": (500, {}),
+            "free.test": (500, {}),
+        }
+    )
     buffet = Buffet(providers, quota=quota, env=env, post=post)
     with pytest.raises(AllProvidersExhausted) as exc:
         buffet.ask("hello")
@@ -53,7 +60,7 @@ def test_least_used_first_ordering(providers, env, quota):
     quota.record("alpha", "alpha-small", 5)
     quota.record("alpha", "alpha-big", 5)
     reply = buffet.ask("hello")
-    assert reply.provider_id in {"beta", "gee"}  # not the heavily-used alpha
+    assert reply.provider_id != "alpha"  # not the heavily-used alpha
 
 
 def test_over_budget_sinks_to_back(providers, env, quota):
@@ -82,6 +89,16 @@ def test_gemini_adapter_shape(providers, env, quota):
     body = post.calls[0]["body"]
     assert "contents" in body and "systemInstruction" in body  # gemini shape
     assert post.calls[0]["headers"].get("x-goog-api-key") == "g"
+
+
+def test_keyless_provider_sends_no_auth_header(providers, env, quota):
+    post = make_post({"free.test": (200, openai_body("free!"))})
+    # empty env: only the keyless provider is usable
+    buffet = Buffet(providers, quota=quota, env={}, post=post)
+    reply = buffet.ask("hello", providers=["free"])
+    assert reply.text == "free!"
+    assert reply.provider_id == "free"
+    assert "Authorization" not in post.calls[0]["headers"]
 
 
 def test_empty_completion_is_failure(providers, env, quota):

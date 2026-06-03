@@ -34,13 +34,22 @@ def cmd_ask(args: argparse.Namespace) -> int:
         print("llmbuffet: no prompt provided (pass text or pipe stdin)", file=sys.stderr)
         return 3
 
+    # Support `--model provider/model` as a shorthand for picking an exact
+    # model on an exact provider (in addition to `--providers` + bare `--model`).
+    model_filter = args.model
+    provider_filter = args.providers.split(",") if args.providers else None
+    if model_filter and "/" in model_filter:
+        prov, _, mdl = model_filter.partition("/")
+        provider_filter = [prov]
+        model_filter = mdl
+
     buffet = Buffet.from_default_config()
     try:
         reply = buffet.ask(
             prompt,
             system=args.system,
-            model=args.model,
-            providers=args.providers.split(",") if args.providers else None,
+            model=model_filter,
+            providers=provider_filter,
             max_tokens=args.max_tokens,
             temperature=args.temperature,
         )
@@ -68,6 +77,33 @@ def cmd_providers(args: argparse.Namespace) -> int:
         print(f"  {mark} {p.id:<12} {p.label:<28} {len(p.models):>2} models   [{status}]")
     if not configured:
         print("\nNo providers configured yet. See .env.example for the env vars to set.")
+    return 0
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    configured = {p.id for p in configured_providers(catalog)}
+    only = set(args.providers.split(",")) if args.providers else None
+    shown = 0
+    for p in catalog:
+        if only is not None and p.id not in only:
+            continue
+        if args.configured_only and p.id not in configured:
+            continue
+        mark = "✓" if p.id in configured else "·"
+        keyless = "  (keyless)" if p.keyless and p.id in configured else ""
+        print(f"\n{mark} {p.id}  —  {p.label}{keyless}")
+        for m in p.models:
+            shown += 1
+            print(f"    {p.id}/{m.name}")
+    if shown == 0:
+        print("No models match. Try `llmbuffet providers` to see configuration status.")
+        return 0
+    print(
+        f"\nPass any id above to `--model`, e.g. "
+        f'`llmbuffet ask -m {catalog[0].id}/{catalog[0].models[0].name} "hi"`,'
+    )
+    print("or just `--model <model-name>` to use that model on any provider that has it.")
     return 0
 
 
@@ -124,7 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask = sub.add_parser("ask", help="one-shot completion")
     p_ask.add_argument("prompt", nargs="?", default="", help="prompt text (stdin is appended)")
     p_ask.add_argument("-s", "--system", help="system prompt")
-    p_ask.add_argument("-m", "--model", help="restrict to a specific model name")
+    p_ask.add_argument(
+        "-m", "--model", help="model name, or provider/model (e.g. groq/llama-3.3-70b-versatile)"
+    )
     p_ask.add_argument("-p", "--providers", help="comma-separated provider ids to allow")
     p_ask.add_argument("--max-tokens", type=int, default=1024)
     p_ask.add_argument("--temperature", type=float, default=0.0)
@@ -133,6 +171,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_prov = sub.add_parser("providers", help="list providers and configuration status")
     p_prov.set_defaults(func=cmd_providers)
+
+    p_models = sub.add_parser("models", help="list every available provider/model id")
+    p_models.add_argument("-p", "--providers", help="comma-separated provider ids to filter")
+    p_models.add_argument(
+        "-c", "--configured-only", action="store_true", help="only show configured providers"
+    )
+    p_models.set_defaults(func=cmd_models)
 
     p_quota = sub.add_parser("quota", help="show today's per-provider usage")
     p_quota.set_defaults(func=cmd_quota)

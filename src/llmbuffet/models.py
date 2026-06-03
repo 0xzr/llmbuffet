@@ -27,19 +27,31 @@ class Provider:
     label: str
     adapter: str  # "openai" | "gemini" | "cloudflare"
     base_url: str
-    key_env: str
     models: tuple[Model, ...]
+    key_env: str | None = None
+    auth: str = "bearer"  # "bearer" | "none" (keyless)
+    key_optional: bool = False  # works without a key, uses one if present
     extra_env: tuple[str, ...] = field(default_factory=tuple)
 
+    @property
+    def keyless(self) -> bool:
+        """True if this provider can be used without any API key at all."""
+        return self.auth == "none" or self.key_optional or not self.key_env
+
     def is_configured(self, env: dict[str, str] | None = None) -> bool:
-        """True if the API key and any extra required env vars are present."""
+        """True if this provider is usable: any extra env vars are present, and
+        either it's keyless or its API key is set."""
         env = env if env is not None else dict(os.environ)
-        if not env.get(self.key_env):
+        if not all(env.get(name) for name in self.extra_env):
             return False
-        return all(env.get(name) for name in self.extra_env)
+        if self.keyless:
+            return True
+        return bool(self.key_env and env.get(self.key_env))
 
     def api_key(self, env: dict[str, str] | None = None) -> str | None:
         env = env if env is not None else dict(os.environ)
+        if not self.key_env:
+            return None
         return env.get(self.key_env) or None
 
     def model(self, name: str) -> Model | None:

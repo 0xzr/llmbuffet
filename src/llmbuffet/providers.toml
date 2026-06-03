@@ -1,22 +1,50 @@
 # llmbuffet built-in provider catalog.
 #
-# Each [[provider]] describes a free-tier LLM endpoint. Keys are NEVER stored
-# here — only the *name* of the environment variable that holds the key.
-# Users supply their own keys (see .env.example).
+# Keys are NEVER stored here — only the *name* of the environment variable that
+# holds the key. Users supply their own keys (see .env.example / docs/ACCOUNTS.md).
 #
 # Fields:
-#   id        unique short id
-#   label     human-friendly name
-#   adapter   "openai" | "gemini" | "cloudflare"  (request/response shape)
-#   base_url  endpoint base (may contain {account_id} for cloudflare)
-#   key_env   env var holding the API key (provider is skipped if unset)
-#   extra_env optional list of additional required env vars
-#   models    list of { name, rpd } — rpd is a free-tier daily request hint
-#             used for quota tracking (0 = unknown/unlimited-ish).
+#   id           unique short id
+#   label        human-friendly name
+#   adapter      "openai" | "gemini" | "cloudflare"  (request/response shape)
+#   base_url     endpoint base (may contain {account_id} for cloudflare)
+#   key_env      env var holding the API key (omit for keyless providers)
+#   auth         "bearer" (default) | "none" (keyless — no Authorization header)
+#   key_optional true = works without a key, but uses one if present
+#   extra_env    optional list of additional required env vars
+#   models       list of { name, rpd } — rpd is a free-tier daily request hint
+#                used for quota tracking (0 = unknown/unmetered).
 #
-# rpd values are conservative public free-tier hints as of 2026 and may drift;
-# llmbuffet treats them as soft budgets, not hard guarantees. Edit freely or
-# override per-user in ~/.config/llmbuffet/providers.toml.
+# rpd values are conservative public free-tier hints as of 2026 and drift over
+# time; llmbuffet treats them as soft budgets and reacts to real 429s at call
+# time. Override per-user in ~/.config/llmbuffet/providers.toml.
+
+# ---- Keyless / zero-setup (works out of the box) ----------------------------
+
+[[provider]]
+id = "ovh"
+label = "OVHcloud AI Endpoints (keyless)"
+adapter = "openai"
+base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+auth = "none"
+models = [
+    { name = "Meta-Llama-3_3-70B-Instruct", rpd = 0 },
+    { name = "Llama-3.1-8B-Instruct", rpd = 0 },
+    { name = "Qwen3.5-397B-A17B", rpd = 0 },
+    { name = "gpt-oss-120b", rpd = 0 },
+    { name = "Mistral-Small-3.2-24B-Instruct-2506", rpd = 0 },
+]
+
+[[provider]]
+id = "llm7"
+label = "LLM7 (key optional)"
+adapter = "openai"
+base_url = "https://api.llm7.io/v1"
+key_env = "LLM7_API_KEY"
+key_optional = true
+models = [{ name = "codestral-latest", rpd = 0 }]
+
+# ---- Fast & generous (recommended first keys) -------------------------------
 
 [[provider]]
 id = "groq"
@@ -29,6 +57,8 @@ models = [
     { name = "llama-3.1-8b-instant", rpd = 1000 },
     { name = "openai/gpt-oss-120b", rpd = 1000 },
     { name = "openai/gpt-oss-20b", rpd = 1000 },
+    { name = "meta-llama/llama-4-scout-17b-16e-instruct", rpd = 1000 },
+    { name = "groq/compound", rpd = 1000 },
 ]
 
 [[provider]]
@@ -41,7 +71,26 @@ models = [
     { name = "gpt-oss-120b", rpd = 14400 },
     { name = "qwen-3-235b-a22b-instruct-2507", rpd = 14400 },
     { name = "llama3.1-8b", rpd = 14400 },
+    { name = "zai-glm-4.7", rpd = 100 },
 ]
+
+# ---- NVIDIA NIM (build.nvidia.com — big free model catalog) ------------------
+
+[[provider]]
+id = "nvidia"
+label = "NVIDIA NIM"
+adapter = "openai"
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+models = [
+    { name = "meta/llama-3.3-70b-instruct", rpd = 0 },
+    { name = "moonshotai/kimi-k2.6", rpd = 0 },
+    { name = "nvidia/nemotron-3-super-120b-a12b", rpd = 0 },
+    { name = "mistralai/mistral-small-4-119b-2603", rpd = 0 },
+    { name = "deepseek-ai/deepseek-r1", rpd = 0 },
+]
+
+# ---- Many models behind one key ---------------------------------------------
 
 [[provider]]
 id = "openrouter"
@@ -52,7 +101,10 @@ key_env = "OPENROUTER_API_KEY"
 models = [
     { name = "meta-llama/llama-3.3-70b-instruct:free", rpd = 1000 },
     { name = "qwen/qwen3-next-80b-a3b-instruct:free", rpd = 1000 },
+    { name = "qwen/qwen3-coder:free", rpd = 1000 },
     { name = "deepseek/deepseek-chat-v3.1:free", rpd = 1000 },
+    { name = "z-ai/glm-4.5-air:free", rpd = 1000 },
+    { name = "nousresearch/hermes-3-llama-3.1-405b:free", rpd = 1000 },
 ]
 
 [[provider]]
@@ -64,6 +116,7 @@ key_env = "GEMINI_API_KEY"
 models = [
     { name = "gemini-2.0-flash", rpd = 1500 },
     { name = "gemini-2.0-flash-lite", rpd = 1500 },
+    { name = "gemini-2.5-flash", rpd = 250 },
 ]
 
 [[provider]]
@@ -75,7 +128,10 @@ key_env = "GITHUB_TOKEN"
 models = [
     { name = "openai/gpt-4.1-mini", rpd = 150 },
     { name = "openai/gpt-4.1-nano", rpd = 150 },
+    { name = "openai/gpt-4o-mini", rpd = 150 },
     { name = "mistral-ai/mistral-small-2503", rpd = 150 },
+    { name = "microsoft/phi-4", rpd = 150 },
+    { name = "cohere/cohere-command-a", rpd = 150 },
 ]
 
 [[provider]]
@@ -89,7 +145,10 @@ models = [
     { name = "@cf/meta/llama-3.3-70b-instruct-fp8-fast", rpd = 0 },
     { name = "@cf/google/gemma-3-12b-it", rpd = 0 },
     { name = "@cf/mistralai/mistral-small-3.1-24b-instruct", rpd = 0 },
+    { name = "@cf/meta/llama-3.1-70b-instruct", rpd = 0 },
 ]
+
+# ---- More free pools ---------------------------------------------------------
 
 [[provider]]
 id = "mistral"
@@ -100,6 +159,7 @@ key_env = "MISTRAL_API_KEY"
 models = [
     { name = "mistral-small-latest", rpd = 0 },
     { name = "open-mistral-nemo", rpd = 0 },
+    { name = "codestral-latest", rpd = 0 },
 ]
 
 [[provider]]
@@ -122,4 +182,35 @@ key_env = "SAMBANOVA_API_KEY"
 models = [
     { name = "Meta-Llama-3.3-70B-Instruct", rpd = 0 },
     { name = "DeepSeek-V3.1", rpd = 0 },
+    { name = "DeepSeek-V3.2", rpd = 0 },
 ]
+
+[[provider]]
+id = "zhipu"
+label = "Z.ai / Zhipu GLM"
+adapter = "openai"
+base_url = "https://api.z.ai/api/paas/v4"
+key_env = "ZHIPU_API_KEY"
+models = [
+    { name = "glm-4.5-flash", rpd = 1000 },
+    { name = "glm-4.7-flash", rpd = 1000 },
+]
+
+[[provider]]
+id = "ollama"
+label = "Ollama Cloud"
+adapter = "openai"
+base_url = "https://ollama.com/v1"
+key_env = "OLLAMA_API_KEY"
+models = [
+    { name = "gpt-oss:120b", rpd = 0 },
+    { name = "qwen3-coder:480b", rpd = 0 },
+]
+
+[[provider]]
+id = "longcat"
+label = "LongCat (Meituan)"
+adapter = "openai"
+base_url = "https://api.longcat.chat/openai/v1"
+key_env = "LONGCAT_API_KEY"
+models = [{ name = "LongCat-Flash-Chat", rpd = 0 }]
