@@ -5,6 +5,11 @@
 all of them — even **one** key gets you going. Start with Groq + Cerebras (the
 two fastest, most generous, and quickest to sign up for), then add more later.
 
+> **No keys at all?** llmbuffet still works: **OVHcloud** is keyless (anonymous)
+> and **LLM7** works without a key. So `llmbuffet ask "hi"` runs the moment you
+> install. The keys below just add more models, higher limits, and better
+> failover.
+
 Each key takes about a minute. Once you have one, either `export` it in your
 shell or put it in a `.env` file (copy [`.env.example`](../.env.example)).
 
@@ -55,6 +60,27 @@ That's enough to start. Run `llmbuffet ask "hello"`.
 ### SambaNova — *free tier*
 1. <https://cloud.sambanova.ai/apis> → **Generate API key**.
 2. `export SAMBANOVA_API_KEY=...`
+
+### NVIDIA NIM — *free credits, huge catalog*
+1. <https://build.nvidia.com> → sign in → pick a model → **Get API Key**.
+2. `export NVIDIA_API_KEY=nvapi-...`
+
+### Z.ai / Zhipu GLM — *free GLM flash models*
+1. <https://z.ai> → sign in → API keys.
+2. `export ZHIPU_API_KEY=...`
+
+### Ollama Cloud — *free tier*
+1. <https://ollama.com/settings/keys> → **Create key**.
+2. `export OLLAMA_API_KEY=...`
+
+### LongCat (Meituan) — *free tier*
+1. <https://longcat.chat> → developer/API keys.
+2. `export LONGCAT_API_KEY=...`
+
+### OVHcloud & LLM7 — *no signup needed*
+Nothing to do — OVHcloud is anonymous and LLM7 works without a key. For higher
+LLM7 limits you can optionally grab a token at <https://token.llm7.io> and
+`export LLM7_API_KEY=...`.
 
 ### Cloudflare Workers AI — *needs two values*
 1. Account ID: Cloudflare dashboard → **Workers & Pages** (right sidebar shows

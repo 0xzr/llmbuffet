@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llmbuffet"
-version = "0.1.0"
+version = "0.2.0"
 description = "An all-you-can-eat buffet of free-tier LLM APIs behind one OpenAI-compatible endpoint, with automatic failover and quota tracking."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "Andrew" }]
+authors = [{ name = "0xzr" }]
 keywords = [
     "llm",
     "openai",
