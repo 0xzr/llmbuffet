@@ -39,7 +39,19 @@ def test_tools_list(providers, env, quota):
     pool = _pool(providers, env, quota)
     resp = handle_message(pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert names == {"free_llm_ask", "free_llm_models"}
+    assert names == {"free_llm_ask", "free_llm_models", "free_llm_quota"}
+
+
+def test_tools_call_quota(providers, env, quota):
+    pool = _pool(providers, env, quota)
+    pool.ask("hi")  # record some usage
+    resp = handle_message(
+        pool,
+        {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "free_llm_quota"}},
+    )
+    text = resp["result"]["content"][0]["text"]
+    assert "usage" in text.lower()
+    assert "session:" in text
 
 
 def test_tools_call_ask(providers, env, quota):

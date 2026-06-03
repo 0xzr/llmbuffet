@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-06-03
+
+### Added
+- **Catalog expanded from 56 to 300+ chat models.** Model lists are now
+  discovered from each provider's `/models` endpoint and filtered to chat models
+  (embeddings/rerank/audio/safety models excluded). The embedder catalog grew to
+  23. Not every advertised model is callable on every free tier — freellmpool
+  fails over.
+- **`free_llm_quota` MCP tool** — shows today's per-provider usage, daily-limit
+  headroom, session totals, and estimated cost avoided.
+
 ## [0.8.1] — 2026-06-03
 
 ### Fixed

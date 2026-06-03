@@ -63,7 +63,7 @@ from collections.abc import Iterable, Iterator  # noqa: E402
 
 StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 
-_USER_AGENT = "freellmpool/0.8 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = "freellmpool/0.9 (+https://github.com/0xzr/freellmpool)"
 
 
 def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:

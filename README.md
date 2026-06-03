@@ -1,7 +1,8 @@
 # freellmpool
 
-Pool the free tiers of 16 LLM providers behind one OpenAI-compatible endpoint —
-as a CLI, a Python library, or a local proxy. Works with no API keys.
+Pool the free tiers of 16 LLM providers (300+ models) behind one
+OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
+Works with no API keys.
 
 [![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
 [![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)

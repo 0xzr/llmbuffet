@@ -57,6 +57,14 @@ TOOLS = [
         "description": "List the available free provider/model ids freellmpool can route to.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "free_llm_quota",
+        "description": (
+            "Show today's free-tier usage (UTC): per-provider request counts and "
+            "daily-limit headroom, plus session totals and estimated cost avoided."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -99,7 +107,43 @@ def _call_tool(pool: Pool, params: dict) -> dict:
     if name == "free_llm_models":
         ids = [f"{p.id}/{m.name}" for p in pool.providers for m in p.models]
         return _text("\n".join(ids) or "no providers configured")
+    if name == "free_llm_quota":
+        return _text(_quota_summary(pool))
     return _text(f"unknown tool: {name}", is_error=True)
+
+
+def _quota_summary(pool: Pool) -> str:
+    from .savings import usd_saved
+
+    snap = pool.quota.snapshot()  # {provider::model: count} for today (UTC)
+    used: dict[str, int] = {}
+    for key, count in snap.items():
+        pid = key.split("::", 1)[0]
+        used[pid] = used.get(pid, 0) + count
+    # per-provider daily-limit hint = max rpd across its models (0 = unmetered)
+    limit: dict[str, int] = {}
+    for p in pool.providers:
+        rpds = [m.rpd for m in p.models if m.rpd > 0]
+        limit[p.id] = max(rpds) if rpds else 0
+
+    lines = ["Today's free-tier usage (UTC):", ""]
+    lines.append(f"{'provider':<13}{'used':>6}  {'daily limit/model':<18}remaining")
+    for p in pool.providers:
+        u = used.get(p.id, 0)
+        lim = limit[p.id]
+        if lim:
+            lines.append(f"{p.id:<13}{u:>6}  ~{lim:<17}{max(0, lim - u)}")
+        else:
+            lines.append(f"{p.id:<13}{u:>6}  {'unmetered':<18}-")
+
+    s = pool.stats
+    lines += [
+        "",
+        f"session: {s.get('requests', 0)} requests, {s.get('cache_hits', 0)} cache hits, "
+        f"{s.get('completion_tokens', 0)} output tokens",
+        f"cost avoided vs gpt-4o: ~${usd_saved(s.get('prompt_tokens'), s.get('completion_tokens')):.4f}",
+    ]
+    return "\n".join(lines)
 
 
 def handle_message(pool: Pool, msg: dict, *, version: str = "0.0.0") -> dict | None:
