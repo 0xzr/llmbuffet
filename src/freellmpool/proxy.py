@@ -492,6 +492,8 @@ def _dashboard_html(pool) -> str:
     import html as _html
 
     from . import __version__
+    from .capacity import build_capacity_report
+    from .key_inventory import load_inventory
     from .savings import usd_saved
 
     s = pool.stats
@@ -518,6 +520,25 @@ def _dashboard_html(pool) -> str:
         )
     provider_rows = "\n".join(rows) or "<tr><td colspan=3>no providers configured</td></tr>"
 
+    capacity = build_capacity_report(env=pool.env, quota=pool.quota, inventory=load_inventory())
+    capacity_rows = []
+    for item in capacity.providers:
+        if item.status == "missing":
+            continue
+        quota = "?" if item.quota_hint <= 0 else str(item.quota_hint)
+        capacity_rows.append(
+            f"<tr><td>{_html.escape(item.provider_id)}</td>"
+            f"<td>{_html.escape(item.status)}</td>"
+            f"<td class=num>{item.used_today}/{quota}</td>"
+            f"<td>{_html.escape(item.reason)}</td></tr>"
+        )
+    capacity_table_rows = "\n".join(capacity_rows) or "<tr><td colspan=4>no capacity data</td></tr>"
+    capacity_table = (
+        "<h2>capacity</h2>"
+        "<table><tr><th>provider</th><th>status</th><th class=num>usage</th><th>reason</th></tr>"
+        f"{capacity_table_rows}</table>"
+    )
+
     # Measured latency / success, if any calls have been timed this run.
     metrics_snap = pool.metrics.snapshot() if getattr(pool, "metrics", None) else {}
     measured = sorted(
@@ -543,7 +564,7 @@ def _dashboard_html(pool) -> str:
     cards = [
         ("requests served", str(s.get("requests", 0))),
         ("cache hits", str(s.get("cache_hits", 0))),
-        ("tokens out", f"{s.get('completion_tokens', 0):,}"),
+        ("healthy providers", f"{capacity.healthy_count}/{capacity.target}"),
         ("not paid to OpenAI", f"${saved:,.2f}"),
     ]
     card_html = "\n".join(
@@ -554,7 +575,8 @@ def _dashboard_html(pool) -> str:
 <style>
  body{{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#0b0e14;color:#e6e6e6}}
  .wrap{{max-width:760px;margin:0 auto;padding:32px 20px}}
- h1{{font-size:22px;margin:0 0 2px}} .sub{{color:#8a93a2;font-size:13px;margin-bottom:24px}}
+ h1{{font-size:22px;margin:0 0 2px}} h2{{font-size:14px;color:#8a93a2;margin:24px 0 8px}}
+ .sub{{color:#8a93a2;font-size:13px;margin-bottom:24px}}
  .cards{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}}
  .card{{background:#141925;border:1px solid #232a39;border-radius:10px;padding:16px;text-align:center}}
  .big{{font-size:26px;font-weight:700}} .lbl{{color:#8a93a2;font-size:11px;margin-top:4px}}
@@ -568,6 +590,7 @@ def _dashboard_html(pool) -> str:
 <div class=cards>{card_html}</div>
 <table><tr><th>provider</th><th>models</th><th class=num>requests today</th></tr>
 {provider_rows}</table>
+{capacity_table}
 {metrics_table}
 <p class=sub style="margin-top:20px">OpenAI endpoint: <code>/v1</code> · <a href="https://github.com/0xzr/freellmpool">github.com/0xzr/freellmpool</a></p>
 </div></body></html>"""

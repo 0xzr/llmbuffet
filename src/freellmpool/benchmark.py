@@ -83,7 +83,7 @@ def benchmark(
             return BenchRow(key, False, None, None, str(exc))
         except Exception as exc:  # noqa: BLE001 — report it, don't abort the sweep
             pool.metrics.record_failure(key, f"{type(exc).__name__}: {exc}")
-            return BenchRow(key, False, None, None, f"{type(exc).__name__}")
+            return BenchRow(key, False, None, None, f"{type(exc).__name__}: {exc}")
         elapsed = (time.monotonic() - started) * 1000.0
         if reply.text:
             pool.metrics.record_success(key, elapsed)
