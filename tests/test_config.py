@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from freellmpool.config import configured_providers, load_catalog, resolve_alias
+from freellmpool.config import configured_providers, known_aliases, load_catalog, resolve_alias
 
 
 def test_alias_default_maps_to_auto():
@@ -18,6 +18,11 @@ def test_alias_unknown_passthrough():
 def test_alias_env_override():
     env = {"FREELLMPOOL_ALIAS_GPT_4O_MINI": "groq/llama-3.3-70b-versatile"}
     assert resolve_alias("gpt-4o-mini", env) == "groq/llama-3.3-70b-versatile"
+
+
+def test_known_aliases_include_env_alias():
+    env = {"FREELLMPOOL_ALIAS_MY_MODEL": "groq/llama-3.3-70b-versatile"}
+    assert "MY_MODEL" in known_aliases(env)
 
 
 def test_packaged_catalog_loads():

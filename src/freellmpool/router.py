@@ -74,6 +74,17 @@ class Target:
         return f"{self.provider.id}/{self.model}"
 
 
+@dataclass
+class _ProviderOrderStats:
+    """Precomputed routing stats for one provider in a candidate set."""
+
+    targets: list[Target]
+    used: int = 0
+    all_over: bool = True
+    all_failing: bool = True
+    best_score: float = float("inf")
+
+
 class Pool:
     def __init__(
         self,
@@ -302,21 +313,18 @@ class Pool:
             key = legacy_fast_key if self.routing == "model-fast" else legacy_fair_key
             return sorted(targets, key=key)
 
-        targets_by_provider: dict[str, list[Target]] = {}
+        by_provider: dict[str, _ProviderOrderStats] = {}
         for target in targets:
-            targets_by_provider.setdefault(target.provider.id, []).append(target)
-
-        def provider_used(provider_id: str) -> int:
-            prefix = f"{provider_id}::"
-            return sum(int(v) for k, v in snap.items() if k.startswith(prefix))
-
-        def provider_over(provider_id: str) -> int:
-            provider_targets = targets_by_provider[provider_id]
-            return 1 if provider_targets and all(over_of(t) for t in provider_targets) else 0
-
-        def provider_failing(provider_id: str) -> int:
-            provider_targets = targets_by_provider[provider_id]
-            return 1 if provider_targets and all(metrics.failing(t.name) for t in provider_targets) else 0
+            provider_id = target.provider.id
+            stats = by_provider.setdefault(provider_id, _ProviderOrderStats(targets=[]))
+            stats.targets.append(target)
+            target_used = used_of(target)
+            target_over = over_of(target)
+            target_failing = metrics.failing(target.name)
+            stats.used += target_used
+            stats.all_over = stats.all_over and bool(target_over)
+            stats.all_failing = stats.all_failing and target_failing
+            stats.best_score = min(stats.best_score, metrics.score(target.name))
 
         def target_fair_key(t: Target) -> tuple[int, int, int]:
             return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
@@ -327,26 +335,27 @@ class Pool:
         if self.routing == "fast":
 
             def provider_fast_key(provider_id: str) -> tuple[int, float, int]:
-                scores = [metrics.score(t.name) for t in targets_by_provider[provider_id]]
-                return (provider_over(provider_id), min(scores), provider_used(provider_id))
+                stats = by_provider[provider_id]
+                return (1 if stats.all_over else 0, stats.best_score, stats.used)
 
-            provider_order = sorted(targets_by_provider, key=provider_fast_key)
+            provider_order = sorted(by_provider, key=provider_fast_key)
             target_key = target_fast_key
         else:
 
             def provider_fair_key(provider_id: str) -> tuple[int, int, int]:
+                stats = by_provider[provider_id]
                 return (
-                    provider_over(provider_id),
-                    provider_failing(provider_id),
-                    provider_used(provider_id),
+                    1 if stats.all_over else 0,
+                    1 if stats.all_failing else 0,
+                    stats.used,
                 )
 
-            provider_order = sorted(targets_by_provider, key=provider_fair_key)
+            provider_order = sorted(by_provider, key=provider_fair_key)
             target_key = target_fair_key
 
         ordered: list[Target] = []
         for provider_id in provider_order:
-            ordered.extend(sorted(targets_by_provider[provider_id], key=target_key))
+            ordered.extend(sorted(by_provider[provider_id].targets, key=target_key))
         return ordered
 
     # ---- the main entrypoint ------------------------------------------

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from freellmpool.config import effective_env, load_config_file, resolve_alias, settings
+from freellmpool.config import (
+    effective_env,
+    known_aliases,
+    load_config_file,
+    resolve_alias,
+    settings,
+)
 
 
 def _write(tmp_path, body: str) -> dict[str, str]:
@@ -26,6 +32,11 @@ def test_keys_fill_under_env(tmp_path):
 def test_config_alias(tmp_path):
     env = _write(tmp_path, '[aliases]\n"gpt-4o-mini" = "groq/llama-3.1-8b-instant"\n')
     assert resolve_alias("gpt-4o-mini", env) == "groq/llama-3.1-8b-instant"
+
+
+def test_known_aliases_include_config_alias(tmp_path):
+    env = _write(tmp_path, '[aliases]\n"my-model" = "groq/llama-3.1-8b-instant"\n')
+    assert "my-model" in known_aliases(env)
 
 
 def test_env_alias_beats_config(tmp_path):
