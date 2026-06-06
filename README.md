@@ -40,6 +40,17 @@ freellmpool code claude                 # prints the one-line setup for Claude C
 # (also: codex, aider, cline, continue, cursor, opencode)
 ```
 
+Claude Code gateway mode can also be launched directly:
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8080 \
+ANTHROPIC_AUTH_TOKEN=dummy \
+ANTHROPIC_MODEL=auto \
+ANTHROPIC_SMALL_FAST_MODEL=auto \
+CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 \
+claude
+```
+
 Your existing OpenAI/Anthropic apps work the same way — set `OPENAI_BASE_URL` (or
 `ANTHROPIC_BASE_URL`) to the proxy and keep your code unchanged.
 
@@ -276,8 +287,10 @@ or down, and tracks per-day usage so load spreads across tiers.
 
 **Can I run Claude Code or Codex on free models?** Yes — the proxy speaks both the
 OpenAI and Anthropic APIs. Set `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` to the proxy
-and run Codex, Claude Code, aider, Cline, Continue, or Cursor unchanged. See
-`freellmpool code <agent>`. (Claude Code path is experimental: text + tools, no vision.)
+and run Codex, Claude Code, aider, Cline, Continue, or Cursor unchanged. For Claude
+Code, set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` so `/v1/models` is discovered
+through the Anthropic bridge. See `freellmpool code <agent>`. (Claude Code path is
+experimental: text + tools, no vision.)
 
 **Do I need an API key?** No — Pollinations and OVHcloud work with no key, so a fresh
 install answers immediately. Add free keys for the other providers for more models and

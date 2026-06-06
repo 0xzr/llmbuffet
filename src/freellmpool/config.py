@@ -75,6 +75,21 @@ def resolve_alias(name: str, env: dict[str, str] | None = None) -> str:
     return name
 
 
+def known_aliases(env: dict[str, str] | None = None) -> list[str]:
+    """Model aliases understood by :func:`resolve_alias`.
+
+    Used by gateway model discovery so clients can choose a well-known Claude or
+    OpenAI model name and still have the proxy resolve it to the free pool.
+    """
+    env = env if env is not None else dict(os.environ)
+    aliases = set(_DEFAULT_ALIASES)
+    aliases.update(str(k) for k in load_config_file(env).get("aliases", {}))
+    for key in env:
+        if key.startswith(_ALIAS_ENV_PREFIX):
+            aliases.add(key[len(_ALIAS_ENV_PREFIX) :])
+    return sorted(aliases)
+
+
 def _user_catalog_path() -> Path | None:
     override = os.environ.get("FREELLMPOOL_CONFIG")
     if override:

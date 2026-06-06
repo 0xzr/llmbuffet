@@ -11,10 +11,13 @@ AGENTS: dict[str, dict] = {
         "label": "Claude Code",
         "steps": [
             "freellmpool proxy --port 8080",
-            "export ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=anything",
-            "claude   # now running on free models via the /v1/messages shim",
+            "export ANTHROPIC_BASE_URL=http://localhost:8080",
+            "export ANTHROPIC_AUTH_TOKEN=dummy ANTHROPIC_API_KEY=dummy",
+            "export ANTHROPIC_MODEL=auto ANTHROPIC_SMALL_FAST_MODEL=auto",
+            "export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1",
+            "claude   # now running on freellmpool via the /v1/messages bridge",
         ],
-        "note": "Experimental: routes Claude Code's Anthropic API to free models.",
+        "note": "Pin a model with ANTHROPIC_MODEL=provider/model, e.g. alibaba_cloud_model_studio/qwen3-plus.",
     },
     "codex": {
         "label": "OpenAI Codex CLI",

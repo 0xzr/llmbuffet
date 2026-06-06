@@ -37,7 +37,10 @@ speaking the Anthropic API unchanged.</strong></p>
 <pre><code>pip install freellmpool
 freellmpool proxy
 export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_API_KEY=anything   # ignored
+export ANTHROPIC_AUTH_TOKEN=dummy
+export ANTHROPIC_MODEL=auto
+export ANTHROPIC_SMALL_FAST_MODEL=auto
+export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
 claude</code></pre>
 <p>Run <code>freellmpool code claude</code> to print this setup. See the full
 <a href="run-coding-agents-on-free-models.html">coding-agents guide</a> for Codex, Aider, Cline and more.</p>

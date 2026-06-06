@@ -26,9 +26,10 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 from .anthropic_shim import estimate_tokens, reply_to_message, reply_to_sse, request_to_chat
-from .config import resolve_alias
+from .config import known_aliases, resolve_alias
 from .errors import (
     AllProvidersExhausted,
     ContextWindowExceeded,
@@ -47,6 +48,34 @@ def _model_ids(pool: Pool) -> list[str]:
             if m.enabled:
                 ids.append(f"{provider.id}/{m.name}")
     return ids
+
+
+def _openai_models_payload(pool: Pool) -> dict:
+    data = [
+        {"id": mid, "object": "model", "owned_by": "freellmpool"}
+        for mid in _model_ids(pool)
+    ]
+    return {"object": "list", "data": data}
+
+
+def _anthropic_models_payload(pool: Pool) -> dict:
+    ids = _model_ids(pool)
+    ids.extend(a for a in known_aliases(pool.env) if a.startswith("claude-") and a not in ids)
+    data = [
+        {
+            "type": "model",
+            "id": mid,
+            "display_name": mid,
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+        for mid in ids
+    ]
+    return {
+        "data": data,
+        "has_more": False,
+        "first_id": ids[0] if ids else None,
+        "last_id": ids[-1] if ids else None,
+    }
 
 
 def make_handler(pool: Pool, api_key: str | None = None):
@@ -92,6 +121,17 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 return True
             return hmac.compare_digest(self.headers.get("x-api-key", ""), api_key)
 
+        def _wants_anthropic_models(self) -> bool:
+            """Claude Code gateway model discovery calls Anthropic's model list
+            shape on the same `/v1/models` route OpenAI clients use."""
+            headers = {k.lower(): v.lower() for k, v in self.headers.items()}
+            user_agent = headers.get("user-agent", "")
+            return (
+                "anthropic-version" in headers
+                or "anthropic-beta" in headers
+                or "claude" in user_agent
+            )
+
         def do_GET(self) -> None:  # noqa: N802
             try:
                 self._do_get()
@@ -105,7 +145,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._error(500, f"internal error: {type(exc).__name__}", "internal_error")
 
         def _do_get(self) -> None:
-            if self.path.rstrip("/") == "/healthz":
+            path = urlsplit(self.path).path.rstrip("/") or "/"
+            if path == "/healthz":
                 self._send(200, {"status": "ok"})
                 return
             # /dashboard and /v1/models leak inventory/usage, so gate them behind
@@ -113,7 +154,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
             if not self._authorized():
                 self._error(401, "invalid or missing API key", "invalid_api_key")
                 return
-            if self.path.rstrip("/") in ("/dashboard", "/"):
+            if path in ("/dashboard", "/"):
                 html = _dashboard_html(pool).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -121,17 +162,18 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self.end_headers()
                 self.wfile.write(html)
                 return
-            if self.path.rstrip("/").endswith("/v1/models") or self.path.rstrip("/") == "/models":
-                data = [
-                    {"id": mid, "object": "model", "owned_by": "freellmpool"}
-                    for mid in _model_ids(pool)
-                ]
-                self._send(200, {"object": "list", "data": data})
+            if path.endswith("/v1/models") or path == "/models":
+                payload = (
+                    _anthropic_models_payload(pool)
+                    if self._wants_anthropic_models()
+                    else _openai_models_payload(pool)
+                )
+                self._send(200, payload)
                 return
             self._error(404, f"unknown route {self.path}", "not_found")
 
         def _do_post(self) -> None:
-            route = self.path.rstrip("/")
+            route = urlsplit(self.path).path.rstrip("/")
             is_chat = route.endswith("/v1/chat/completions") or route == "/chat/completions"
             is_responses = route.endswith("/v1/responses") or route == "/responses"
             is_embeddings = route.endswith("/v1/embeddings") or route == "/embeddings"

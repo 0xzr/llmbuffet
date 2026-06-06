@@ -54,6 +54,28 @@ def test_models_route(server):
     assert any(i.startswith("alpha/") for i in ids)
 
 
+def test_models_route_accepts_query_string(server):
+    with urllib.request.urlopen(server + "/v1/models?limit=100") as resp:  # noqa: S310
+        body = json.load(resp)
+    assert body["object"] == "list"
+    assert any(m["id"] == "auto" for m in body["data"])
+
+
+def test_anthropic_model_discovery_shape(server):
+    req = urllib.request.Request(
+        server + "/v1/models?limit=100",
+        headers={"anthropic-version": "2023-06-01", "User-Agent": "claude-code"},
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310
+        body = json.load(resp)
+    assert body["has_more"] is False
+    assert body["data"][0]["type"] == "model"
+    assert body["data"][0]["id"] == "auto"
+    assert body["data"][0]["display_name"] == "auto"
+    ids = {m["id"] for m in body["data"]}
+    assert "claude-3-5-haiku-latest" in ids
+
+
 def test_dashboard(server):
     with urllib.request.urlopen(server + "/dashboard") as resp:  # noqa: S310
         assert resp.status == 200
@@ -296,6 +318,19 @@ def test_auth_required_on_all_post_routes(providers, env, quota):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_anthropic_messages_route_accepts_query_string(server):
+    status, body = _post_json(
+        server + "/v1/messages?beta=true",
+        {
+            "model": "claude-3-5-sonnet",
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert status == 200
+    assert body["type"] == "message"
 
 
 def test_gemini_adapter_via_proxy(providers, env, quota):
