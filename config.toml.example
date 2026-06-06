@@ -17,5 +17,5 @@
 
 [settings]
 # cooldown_seconds = 60     # how long to deprioritize a 429'd provider
-# routing = "fair"          # fair provider balance; fast; legacy/model for per-model balance
+# routing = "fair"          # fair provider balance; fast; legacy/model (per-model); model-fast
 # proxy_key = "secret"      # require this Bearer token on the proxy

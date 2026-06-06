@@ -236,7 +236,8 @@ are currently failing sinks to the back automatically; with
 `FREELLMPOOL_ROUTING=fast` the fastest measured provider goes first instead.
 `freellmpool benchmark` warms these metrics on demand. To restore the old
 per-model balancing behavior, set `FREELLMPOOL_ROUTING=legacy` or
-`FREELLMPOOL_ROUTING=model`.
+`FREELLMPOOL_ROUTING=model` (or `FREELLMPOOL_ROUTING=model-fast` for the old
+per-model fastest-first ordering).
 
 **Context windows.** Free models often have small context windows. freellmpool
 never truncates your input; instead, when a model rejects a request as too long,

@@ -60,7 +60,8 @@ reply = Pool.from_default_config().ask("Write a haiku about sqlite")
 inside that provider. This keeps large catalogs from getting extra traffic just because they expose more
 models. It tries candidates until one returns a non-empty result, and sets a rate-limited provider aside
 for a cooldown. Daily counts reset at UTC midnight. Set <code>FREELLMPOOL_ROUTING=fast</code> to prefer the
-lowest-latency provider, or <code>FREELLMPOOL_ROUTING=legacy</code> to restore per-model balancing.</p>
+lowest-latency provider, or <code>FREELLMPOOL_ROUTING=legacy</code> (or <code>model-fast</code>) to restore
+per-model balancing.</p>
 
 <h2>FAQ</h2>
 <h3>How do I use Groq and Cerebras and Gemini together?</h3>
