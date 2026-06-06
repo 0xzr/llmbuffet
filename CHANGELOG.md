@@ -4,6 +4,48 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-06-06
+
+Capacity management — see what's usable right now and keep your free tiers
+healthy. From [#7](https://github.com/0xzr/freellmpool/pull/7) by
+[@arthurlacoste](https://github.com/arthurlacoste), with maintainer hardening.
+
+### Added
+- **`freellmpool capacity status`** — a local-first summary of every provider:
+  configured vs missing a key, enabled-model count, today's usage against the
+  daily quota hint, and a `healthy` / `low_quota` / `exhausted` / `invalid_key` /
+  `missing` status. `--target N` flags when you're below N healthy providers;
+  `--all` includes missing ones and external-only candidates. See
+  [docs/CAPACITY.md](docs/CAPACITY.md).
+- **`freellmpool providers health`** — sends one tiny request to each configured
+  provider and reports latency / failure (so you can tell a missing key from a
+  rate-limited or down provider). `-p` to filter, `--timeout`, `-m` to pin a model.
+- **`freellmpool keys status` / `keys checklist` / `keys add`** — an optional,
+  metadata-only key inventory (`~/.config/freellmpool/keys.toml`; never stores raw
+  secrets) plus an interactive `keys add` that writes the key to `config.toml`,
+  records metadata, and can create a provider — matching a typo or model name
+  against the external catalog, or building an OpenAI-compatible stub and
+  autodiscovering its models from `GET /models`.
+- **`freellmpool catalog sync` / `catalog status`** — sync an advisory external
+  provider catalog ([mnfst/awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis))
+  into a local cache to surface free providers you could add next. Advisory only:
+  the executable routing config remains `providers.toml`; the network sync falls
+  back to the cache when offline.
+- **Dashboard capacity panel** — the proxy `/dashboard` now shows a healthy-provider
+  count and a per-provider capacity/usage table.
+
+### Changed
+- `benchmark` failures now include the exception message, not just its type.
+
+### Hardening (maintainer follow-up)
+- `toml_escape` escapes control characters, so an external-catalog value
+  containing a newline can't corrupt the generated user `providers.toml`.
+- Base URLs that become routing targets are validated before use: the external
+  import is https-only; the user-provided stub requires an http(s) scheme (http
+  kept for localhost) and rejects whitespace/control characters; model discovery
+  fetches http(s) only (no `file://`).
+- External-catalog and model-discovery downloads are size-capped.
+
 ## [0.10.1] — 2026-06-03
 
 A full-project review (Codex + a manual pass), reconciled to consensus, plus the

@@ -79,6 +79,7 @@ tiers — not a server you deploy and not a paid aggregator.</p>
 <li><strong>Async + library:</strong> <code>from freellmpool import Pool, AsyncPool</code>.</li>
 <li><strong>MCP server:</strong> <code>freellmpool mcp</code> lets Claude Desktop/Code/Cursor offload subtasks to free models.</li>
 <li><strong>Pick the fastest tier:</strong> <code>freellmpool benchmark</code> + latency-aware routing.</li>
+<li><strong>See what's usable right now:</strong> <code>freellmpool capacity status</code> and <code>freellmpool providers health</code> show which free tiers are healthy, near quota, or missing a key — see the <a href="capacity-management.html">capacity guide</a>.</li>
 </ul>
 
 <h2>Guides</h2>
@@ -90,6 +91,7 @@ tiers — not a server you deploy and not a paid aggregator.</p>
 <li><a href="free-alternative-to-openrouter.html">A free alternative to OpenRouter</a></li>
 <li><a href="use-multiple-free-llm-apis.html">How to use multiple free LLM APIs together</a></li>
 <li><a href="run-coding-agents-on-free-models.html">Run Claude Code, Codex, or Aider on free models</a></li>
+<li><a href="capacity-management.html">Know which free LLM tiers are usable right now (capacity &amp; health)</a></li>
 <li><a href="free-llm-api-providers-list.html">Free LLM API providers list (2026) — tiers &amp; limits</a></li>
 </ul>
 <p class="tag">Per-provider free tiers:
@@ -129,6 +131,14 @@ immediately. Add free keys for the other 14 providers to unlock more models and 
 GitHub Models, Cloudflare Workers AI, Mistral, Cohere, SambaNova, Z.ai/Zhipu, Ollama Cloud, and
 LongCat — 235 live-validated chat models, plus free embeddings.</p>
 
+<h3>How do I know which free providers are usable right now?</h3>
+<p>Run <code>freellmpool capacity status</code>: it labels each provider <code>healthy</code>,
+<code>low_quota</code>, <code>exhausted</code>, <code>invalid_key</code>, or <code>missing</code> from
+your local catalog, environment, and per-day usage, and flags when you're below a target number of
+healthy providers. <code>freellmpool providers health</code> sends one tiny request to each configured
+provider and reports latency or failure, and <code>freellmpool keys add</code> walks you through
+configuring more. See the <a href="capacity-management.html">capacity guide</a>.</p>
+
 <h3>How is freellmpool different from OpenRouter?</h3>
 <p>OpenRouter is a hosted aggregator you pay per token (with some rate-limited free models) and access
 through its API. freellmpool is a local, open-source tool you <code>pip install</code> that pools the
@@ -147,7 +157,7 @@ capacity varies through the day. The proxy is meant for local/single-user use.</
 
 </div>
 
-<p class="meta">Free and open source (MIT). Latest release: 0.10.1. Page updated 2026-06-03.
+<p class="meta">Free and open source (MIT). Latest release: 0.11.0. Page updated 2026-06-06.
 Project: <a href="https://github.com/0xzr/freellmpool">github.com/0xzr/freellmpool</a></p>
 
 </div>
@@ -162,7 +172,7 @@ Project: <a href="https://github.com/0xzr/freellmpool">github.com/0xzr/freellmpo
   "description": "Free, open-source OpenAI-compatible gateway that pools the free tiers of 16 LLM providers (Groq, Cerebras, NVIDIA, Gemini, OpenRouter, Cloudflare, Mistral, Cohere and more) behind one endpoint, with automatic failover. CLI, Python library, local proxy, and MCP server. Keyless to start.",
   "url": "https://0xzr.github.io/freellmpool/",
   "downloadUrl": "https://pypi.org/project/freellmpool/",
-  "softwareVersion": "0.10.1",
+  "softwareVersion": "0.11.0",
   "license": "https://opensource.org/licenses/MIT",
   "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
   "author": {"@type": "Person", "name": "0xzr"}

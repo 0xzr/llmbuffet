@@ -43,6 +43,12 @@ freellmpool code claude                 # prints the one-line setup for Claude C
 Your existing OpenAI/Anthropic apps work the same way — set `OPENAI_BASE_URL` (or
 `ANTHROPIC_BASE_URL`) to the proxy and keep your code unchanged.
 
+**New in 0.11:** capacity tools — `freellmpool capacity status` shows which free
+tiers are usable right now, `freellmpool providers health` live-probes them, and
+`freellmpool keys add` walks you through configuring more (see
+[Capacity & provider health](#capacity--provider-health) and
+[docs/CAPACITY.md](docs/CAPACITY.md)).
+
 **New in 0.10:** an async API (`AsyncPool`), an MCP server (`freellmpool mcp`),
 latency-aware routing with `freellmpool benchmark`, observability hooks, and a
 plugin system for custom providers. See the [changelog](CHANGELOG.md).
@@ -147,6 +153,28 @@ $ freellmpool benchmark
   groq/llama-3.3-70b        ok        240 ms  6 tok
   ovh/Meta-Llama-3_3-70B    FAIL           -  HTTP 429
 ```
+
+## Capacity & provider health
+
+Free tiers drift through the day — keys expire, providers go down, daily caps
+fill. These commands tell you what's usable right now and what to set up next:
+
+```bash
+freellmpool capacity status --target 5   # who's healthy / near quota / missing a key
+freellmpool providers health             # send one tiny request to each, time it
+freellmpool keys checklist --target 5    # which keys to add to reach N healthy providers
+freellmpool keys add groq                # configure a key (and record metadata)
+```
+
+`capacity status` is local-first: it reads your catalog, environment, and
+per-day quota counters and labels each provider `healthy`, `low_quota`,
+`exhausted`, `invalid_key`, or `missing`. It also syncs an advisory external
+catalog ([mnfst/awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis))
+to suggest free providers you could add — advisory only; your `providers.toml`
+stays the source of truth for routing. `keys add <name>` can even import a
+suggested provider from that catalog or create an OpenAI-compatible stub and
+autodiscover its models. The proxy `/dashboard` shows the same capacity at a
+glance. Full reference: [docs/CAPACITY.md](docs/CAPACITY.md).
 
 ## As an MCP server
 

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Know which free LLM API tiers are usable right now (capacity &amp; health)</title>
+<meta name="description" content="See which free LLM provider tiers are usable right now with freellmpool: capacity status (healthy / near-quota / missing key), live provider health checks, a key-setup checklist, and external-catalog discovery. Free, open-source, keyless to start.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/capacity-management.html">
+<meta property="og:title" content="Know which free LLM tiers are usable right now — capacity & health">
+<meta property="og:description" content="freellmpool's capacity tools show which free LLM tiers are healthy, near quota, or missing a key, live-probe providers, and help you add more.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}
+ body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}
+ h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}
+ h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}
+ a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+ pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}
+ code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}
+ pre code{background:none;padding:0}
+ .lead{font-size:17px}
+ .note{background:var(--card);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:6px;padding:10px 14px;font-size:14px;margin:14px 0}
+ table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+ th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd)}
+ th{color:var(--mut);font-weight:600}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/capacity-management.html">
+<meta name="twitter:card" content="summary">
+</head>
+<body>
+<div class="wrap">
+
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> &rsaquo; guide</p>
+<h1>Know which free LLM tiers are usable right now</h1>
+
+<p class="lead"><strong>Free LLM tiers drift through the day — keys expire, providers go down, and
+daily caps fill up. <a href="https://github.com/0xzr/freellmpool">freellmpool</a> ships capacity tools
+that tell you, locally, which of your free providers are usable <em>right now</em>, which are near their
+quota, and which keys to add next.</strong> freellmpool is a free, open-source tool that pools the free
+tiers of 16 LLM providers behind one OpenAI-compatible endpoint; these commands keep that pool healthy.</p>
+
+<pre><code>pip install freellmpool
+freellmpool capacity status --target 5</code></pre>
+
+<h2>1. capacity status — a local snapshot</h2>
+<p><code>capacity status</code> reads your provider catalog, your environment (which keys are set), and
+your per-day usage counters, then labels every provider with a status. It never calls a provider, so
+it's instant:</p>
+<pre><code>$ freellmpool capacity status --target 5
+LLM capacity: 4/5 healthy providers
+Action recommended: add 1 provider(s).
+
+  healthy     groq          Groq             used=12/1000  models=9   key=GROQ_API_KEY
+  low_quota   github        GitHub Models    used=130/150  models=35  key=GITHUB_TOKEN
+  healthy     cerebras      Cerebras         used=0/14400  models=2   key=CEREBRAS_API_KEY
+  ...</code></pre>
+
+<table>
+<tr><th>Status</th><th>Meaning</th></tr>
+<tr><td><code>healthy</code></td><td>Configured and usable from local state.</td></tr>
+<tr><td><code>low_quota</code></td><td>Usage is above 80% of the daily request hint.</td></tr>
+<tr><td><code>exhausted</code></td><td>Usage reached the daily request hint.</td></tr>
+<tr><td><code>invalid_key</code></td><td>Your local key inventory says the key has expired.</td></tr>
+<tr><td><code>missing</code></td><td>The provider exists in the catalog but isn't configured.</td></tr>
+</table>
+
+<p><code>--target N</code> flags when you have fewer than N healthy providers; <code>--all</code> also
+lists missing providers and external-only catalog candidates you could add. By default it refreshes an
+advisory external catalog over the network (a read-only metadata fetch); pass <code>--no-catalog-sync</code>
+to keep it fully local.</p>
+
+<h2>2. providers health — does it actually respond?</h2>
+<p><code>capacity status</code> reads local state; <code>providers health</code> goes one step further and
+sends a tiny real request to each configured provider, so you can tell a missing key from a rate-limited
+or down provider:</p>
+<pre><code>$ freellmpool providers health
+  provider/model                status        latency  note
+  groq/llama-3.3-70b-versatile  ok             237 ms  2 tok
+  mistral/mistral-small-latest  ok             539 ms  2 tok
+  cerebras/gpt-oss-120b         rate_limited        -  HTTP 429
+
+  2/3 providers ok</code></pre>
+<p>Use <code>-p groq,cerebras</code> to test a subset, <code>--timeout</code> to bound each call, and
+<code>-m &lt;model&gt;</code> to pin a model.</p>
+
+<h2>3. keys — a checklist and an interactive add</h2>
+<p>To reach a target number of healthy providers, ask for a checklist of which keys to create:</p>
+<pre><code>$ freellmpool keys checklist --target 5
+Manual key checklist to reach 5 healthy providers:
+  - cerebras: create a key manually, then set CEREBRAS_API_KEY</code></pre>
+<p><code>keys add</code> then walks you through it — it writes the key to your <code>config.toml</code> and
+records metadata (name, dates, notes) in an optional inventory at
+<code>~/.config/freellmpool/keys.toml</code>. The inventory is metadata only; raw secrets stay in your
+config or environment.</p>
+<pre><code>freellmpool keys add groq                       # configure a known provider
+freellmpool keys add Hyperbolic                 # match &amp; import from the external catalog
+freellmpool keys add MyProvider --base-url https://api.example.com/v1 --yes</code></pre>
+<p>If the name isn't a local provider, <code>keys add</code> checks the synced external catalog
+(<a href="https://github.com/mnfst/awesome-free-llm-apis">mnfst/awesome-free-llm-apis</a>), matching typos
+and model names with a small fuzzy search, and can import the suggestion. Or it builds a minimal
+OpenAI-compatible provider and autodiscovers its models from the <code>GET /models</code> endpoint.</p>
+
+<div class="note">The external catalog is <strong>advisory only</strong>. Your local
+<code>providers.toml</code> stays the source of truth for routing; freellmpool doesn't send traffic to a
+discovered provider until you've imported it and set its key. Imported endpoints are validated (https,
+no junk) before they're written.</div>
+
+<h2>4. The dashboard</h2>
+<p>When the proxy is running (<code>freellmpool proxy</code>), open
+<code>http://127.0.0.1:8080/dashboard</code>. Alongside request counts, cache hits, and estimated
+savings, it shows a healthy-provider count and a per-provider capacity table — the same signal as
+<code>capacity status</code>, in the browser.</p>
+
+<h2>FAQ</h2>
+<h3>Which free LLM provider should I use right now?</h3>
+<p>Run <code>freellmpool capacity status</code>: it sorts your configured providers by health and
+remaining capacity, so the top <code>healthy</code> rows are the ones to use. The pool also picks
+automatically per request and fails over when one is rate-limited.</p>
+<h3>Does capacity status make network calls?</h3>
+<p>The provider statuses are computed from local state only. By default it also refreshes the advisory
+external catalog over the network; pass <code>--no-catalog-sync</code> to skip that and stay fully
+offline. Live provider probing is a separate command, <code>providers health</code>.</p>
+<h3>Does it store my API keys?</h3>
+<p>The key inventory holds metadata only (provider, env-var name, optional dates and notes), never raw
+secrets. <code>keys add</code> writes the actual key to <code>config.toml</code> (chmod 600); you can
+also just keep keys in environment variables.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open
+source). Full reference:
+<a href="https://github.com/0xzr/freellmpool/blob/main/docs/CAPACITY.md">docs/CAPACITY.md</a>. Updated 2026-06-06.</p>
+
+</div>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "Know which free LLM tiers are usable right now (capacity & health)", "item": "https://0xzr.github.io/freellmpool/capacity-management.html"}]}</script>
+</body>
+</html>

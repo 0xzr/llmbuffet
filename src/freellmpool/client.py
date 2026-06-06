@@ -64,7 +64,7 @@ from collections.abc import Iterable, Iterator  # noqa: E402
 
 StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 
-_USER_AGENT = "freellmpool/0.10 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = "freellmpool/0.11 (+https://github.com/0xzr/freellmpool)"
 
 _CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
 _shared = None  # one pooled, keep-alive httpx.Client shared across calls/threads

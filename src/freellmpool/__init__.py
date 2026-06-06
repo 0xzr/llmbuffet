@@ -15,7 +15,7 @@ from .models import EmbedReply, Model, Provider, Reply
 from .plugins import register_adapter, register_provider
 from .router import Pool
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 
 def __getattr__(name: str):
