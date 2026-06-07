@@ -194,6 +194,53 @@ def cmd_quota(args: argparse.Namespace) -> int:
     return 0
 
 
+def _quota_leaderboard(limit: int = 5) -> list[tuple[str, float]]:
+    """Top providers by requests served today, as (id, fraction-of-leader)."""
+    totals: dict[str, int] = {}
+    for key, count in QuotaStore().snapshot().items():
+        pid = key.split("::", 1)[0]
+        totals[pid] = totals.get(pid, 0) + int(count)
+    ranked = sorted(totals.items(), key=lambda kv: -kv[1])[:limit]
+    top = ranked[0][1] if ranked and ranked[0][1] > 0 else 1
+    return [(pid, count / top) for pid, count in ranked if count > 0]
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    from .stats import StatsStore
+
+    snap = StatsStore().snapshot()
+    tokens = snap["prompt_tokens"] + snap["completion_tokens"]
+    print("freellmpool — lifetime (served free):")
+    print(f"  requests:    {snap['requests']:,}")
+    print(
+        f"  tokens:      {tokens:,}  "
+        f"({snap['prompt_tokens']:,} in / {snap['completion_tokens']:,} out)"
+    )
+    print(f"  cache hits:  {snap['cache_hits']:,}")
+    print(f"  {format_saved(snap['prompt_tokens'], snap['completion_tokens'])}")
+    if snap.get("first_seen"):
+        print(f"  since:       {snap['first_seen']}")
+    return 0
+
+
+def cmd_badge(args: argparse.Namespace) -> int:
+    from . import svg
+    from .stats import StatsStore
+
+    snap = StatsStore().snapshot()
+    if args.summary:
+        out = svg.summary_svg(snap, _quota_leaderboard())
+    else:
+        out = svg.badge_svg(snap, metric=args.metric)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(out)
+        print(f"wrote {args.output}", file=sys.stderr)
+    else:
+        print(out)
+    return 0
+
+
 def _format_capacity_row(row) -> str:
     quota = "?" if row.quota_hint <= 0 else str(row.quota_hint)
     key = "keyless" if row.keyless else (row.key_env or "-")
@@ -701,6 +748,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_quota = sub.add_parser("quota", help="show today's per-provider usage")
     p_quota.set_defaults(func=cmd_quota)
+
+    p_stats = sub.add_parser(
+        "stats", help="lifetime usage totals (tokens served free, avoided cost)"
+    )
+    p_stats.set_defaults(func=cmd_stats)
+
+    p_badge = sub.add_parser("badge", help="render a shareable SVG badge/summary of lifetime usage")
+    p_badge.add_argument(
+        "--summary", action="store_true", help="render the larger summary card instead of a badge"
+    )
+    p_badge.add_argument(
+        "--metric",
+        choices=["tokens", "saved", "requests"],
+        default="tokens",
+        help="which figure the badge shows (default: tokens)",
+    )
+    p_badge.add_argument("-o", "--output", help="write the SVG to this file instead of stdout")
+    p_badge.set_defaults(func=cmd_badge)
 
     p_keys = sub.add_parser("keys", help="inspect manually configured provider keys")
     keys_sub = p_keys.add_subparsers(dest="keys_command", required=True)
