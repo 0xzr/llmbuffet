@@ -21,10 +21,12 @@ Supported routes:
 
 from __future__ import annotations
 
+import collections
 import hmac
 import json
 import os
 import threading
+from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -37,12 +39,15 @@ from .errors import (
     NoProvidersConfigured,
 )
 from .router import Pool
+from .savings import usd_saved
 
 _MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
 
 
 def _model_ids(pool: Pool) -> list[str]:
-    ids = ["auto"]
+    # "auto" + per-request routing aliases (mapped to a routing mode by the proxy),
+    # then every enabled provider/model id.
+    ids = ["auto", "fast", "quality", "fair"]
     for provider in pool.providers:
         for m in provider.models:
             if m.enabled:
@@ -51,10 +56,7 @@ def _model_ids(pool: Pool) -> list[str]:
 
 
 def _openai_models_payload(pool: Pool) -> dict:
-    data = [
-        {"id": mid, "object": "model", "owned_by": "freellmpool"}
-        for mid in _model_ids(pool)
-    ]
+    data = [{"id": mid, "object": "model", "owned_by": "freellmpool"} for mid in _model_ids(pool)]
     return {"object": "list", "data": data}
 
 
@@ -78,7 +80,94 @@ def _anthropic_models_payload(pool: Pool) -> dict:
     }
 
 
+def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
+    """Return a JSON-able status payload for the /status endpoint.
+
+    ``recent`` is a snapshot (most-recent-first) of the served-target ring buffer,
+    taken under its lock by the caller so iteration here is race-free.
+    """
+    now = pool._clock()
+    quota_snap = pool.quota.snapshot()
+    metrics_snap = pool.metrics.snapshot()
+
+    providers_list = []
+    for p in pool.providers:
+        cooldown_until = pool._cooldown_until.get(p.id, 0.0)
+        cooldown_remaining = max(0.0, cooldown_until - now)
+
+        models_list = []
+        for m in p.models:
+            if not m.enabled:
+                continue
+            key = f"{p.id}::{m.name}"
+            used = quota_snap.get(key, 0)
+            remaining = (m.rpd - used) if m.rpd > 0 else None
+            stat = metrics_snap.get(f"{p.id}/{m.name}")
+            models_list.append(
+                {
+                    "name": m.name,
+                    "rpd": m.rpd,
+                    "used_today": used,
+                    "remaining": remaining,
+                    "ewma_ms": stat.ewma_ms if stat else None,
+                    "success_rate": stat.success_rate if stat else None,
+                    "last_error": stat.last_error if stat else None,
+                }
+            )
+
+        providers_list.append(
+            {
+                "id": p.id,
+                "configured": p.is_configured(pool.env),
+                "cooldown_remaining_s": cooldown_remaining,
+                "models": models_list,
+            }
+        )
+
+    s = pool.stats
+    saved = usd_saved(s.get("prompt_tokens", 0), s.get("completion_tokens", 0))
+
+    return {
+        "routing": pool.routing,
+        "pool": {
+            "requests": s.get("requests", 0),
+            "prompt_tokens": s.get("prompt_tokens", 0),
+            "completion_tokens": s.get("completion_tokens", 0),
+            "cache_hits": s.get("cache_hits", 0),
+            "usd_saved": saved,
+        },
+        "providers": providers_list,
+        "recent": list(recent),
+    }
+
+
+_ROUTING_MODES = frozenset({"fair", "fast", "quality", "legacy", "model", "model-fast"})
+
+
+def _routing_and_model(headers, requested: str) -> tuple[str | None, str]:
+    """Resolve a per-request routing override. A valid mode in the
+    ``X-Freellmpool-Routing`` header, or the model name itself being a routing
+    keyword (e.g. ``fast``/``quality``), selects that mode and falls back to ``auto``
+    model selection. Returns ``(routing_override, requested_model)``."""
+    override = (headers.get("X-Freellmpool-Routing", "") or "").lower()
+    override = override if override in _ROUTING_MODES else None
+    if isinstance(requested, str) and requested.lower() in _ROUTING_MODES:
+        override = override or requested.lower()
+        requested = "auto"
+    return override, requested
+
+
 def make_handler(pool: Pool, api_key: str | None = None):
+    # Ring buffer of recently-served (provider, model). Appended from worker
+    # threads and snapshotted by /status, so guard it: a deque append is atomic,
+    # but iterating it (list(recent)) concurrently with an append can raise.
+    recent = collections.deque(maxlen=25)
+    recent_lock = threading.Lock()
+
+    def record_recent(entry: dict) -> None:
+        with recent_lock:
+            recent.appendleft(entry)
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "freellmpool/0.10"
         # Socket read timeout: a slow/stalled client can't pin a worker thread + fd
@@ -170,6 +259,11 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 )
                 self._send(200, payload)
                 return
+            if path in ("/status", "/v1/status"):
+                with recent_lock:
+                    recent_snapshot = list(recent)
+                self._send(200, _status_payload(pool, recent_snapshot))
+                return
             self._error(404, f"unknown route {self.path}", "not_found")
 
         def _do_post(self) -> None:
@@ -231,7 +325,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._anthropic_error(400, "no usable message content in request")
                 return
             display_model = req.get("model") or "auto"
-            resolved = resolve_alias(str(chat["model"]), pool.env)
+            routing_override, model_str = _routing_and_model(self.headers, str(chat["model"]))
+            resolved = resolve_alias(model_str, pool.env)
             provider_filter, model_filter = _parse_model(resolved, {p.id for p in pool.providers})
             try:
                 reply = pool.chat(
@@ -242,6 +337,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
                     temperature=chat["temperature"],
                     tools=chat["tools"],
                     tool_choice=chat["tool_choice"],
+                    routing=routing_override,
                 )
             except NoProvidersConfigured as exc:
                 self._anthropic_error(503, str(exc), "no_providers")
@@ -252,6 +348,10 @@ def make_handler(pool: Pool, api_key: str | None = None):
             except AllProvidersExhausted as exc:
                 self._anthropic_error(502, str(exc), "all_providers_exhausted")
                 return
+            # Record recent served
+            record_recent(
+                {"provider": reply.provider_id, "model": reply.model, "attempts": reply.attempts}
+            )
             if req.get("stream"):
                 self._send_sse(reply_to_sse(reply, display_model))
             else:
@@ -295,6 +395,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
             if not isinstance(requested, str):
                 self._error(400, "'model' must be a string", "invalid_request_error")
                 return None
+            routing_override, requested = _routing_and_model(self.headers, requested)
             requested = resolve_alias(requested, pool.env)  # gpt-4o-mini → free target
             provider_filter, model_filter = _parse_model(requested, {p.id for p in pool.providers})
             try:
@@ -315,6 +416,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
                     temperature=temperature,
                     tools=tools,
                     tool_choice=tool_choice,
+                    routing=routing_override,
                 )
             except NoProvidersConfigured as exc:
                 self._error(503, str(exc), "no_providers")
@@ -343,6 +445,10 @@ def make_handler(pool: Pool, api_key: str | None = None):
             reply = self._resolve(req, norm, tools=tools, tool_choice=req.get("tool_choice"))
             if reply is None:
                 return
+            # Record recent served
+            record_recent(
+                {"provider": reply.provider_id, "model": reply.model, "attempts": reply.attempts}
+            )
             if req.get("stream"):
                 self._send_sse(_sse_chunks(reply))
             else:
@@ -353,6 +459,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
             if not isinstance(requested, str):
                 self._error(400, "'model' must be a string", "invalid_request_error")
                 return
+            routing_override, requested = _routing_and_model(self.headers, requested)
             provider_filter, model_filter = _parse_model(
                 resolve_alias(requested, pool.env), {p.id for p in pool.providers}
             )
@@ -372,6 +479,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
                     providers=provider_filter,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    routing=routing_override,
                 )
                 meta = next(gen)  # provider/model chosen, or raises before any bytes
             except NoProvidersConfigured as exc:
@@ -385,6 +493,13 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 # nothing streamable succeeded — fall back to a buffered completion
                 reply = self._resolve(req, norm)
                 if reply is not None:
+                    record_recent(
+                        {
+                            "provider": reply.provider_id,
+                            "model": reply.model,
+                            "attempts": reply.attempts,
+                        }
+                    )
                     self._send_sse(_sse_chunks(reply))
                 return
 
@@ -418,6 +533,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
                     pass
             finally:
                 gen.close()  # release the upstream stream even on early disconnect
+            # Record recent served (stream)
+            record_recent({"provider": provider_id, "model": model_name, "attempts": 1})
 
         def _handle_responses(self, req: dict) -> None:
             """Minimal OpenAI Responses API (/v1/responses) shim for Codex CLI
@@ -429,6 +546,9 @@ def make_handler(pool: Pool, api_key: str | None = None):
             reply = self._resolve(req, messages)
             if reply is None:
                 return
+            record_recent(
+                {"provider": reply.provider_id, "model": reply.model, "attempts": reply.attempts}
+            )
             if req.get("stream"):
                 self._send_sse(_responses_sse_events(reply))
             else:

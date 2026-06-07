@@ -283,7 +283,9 @@ class Pool:
                 targets.append(Target(provider, m.name, m.rpd, m.context))
         return targets
 
-    def _order(self, targets: list[Target], difficulty: float | None = None) -> list[Target]:
+    def _order(
+        self, targets: list[Target], difficulty: float | None = None, routing: str | None = None
+    ) -> list[Target]:
         """Order candidate targets for failover.
 
         ``fair`` (default): least-used provider first, then least-used model inside
@@ -305,6 +307,11 @@ class Pool:
         # One snapshot instead of a locked read per target (matters for large catalogs).
         snap = self.quota.snapshot()
         metrics = self.metrics
+        mode = (
+            routing
+            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            else self.routing
+        )
 
         def used_of(t: Target) -> int:
             return int(snap.get(f"{t.provider.id}::{t.model}", 0))
@@ -312,7 +319,7 @@ class Pool:
         def over_of(t: Target) -> int:
             return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
 
-        if self.routing == "quality":
+        if mode == "quality":
             table = capability_table()
             need = difficulty if difficulty is not None else 0.5
 
@@ -328,7 +335,7 @@ class Pool:
 
             return sorted(targets, key=quality_key)
 
-        if self.routing in ("legacy", "model", "model-fast"):
+        if mode in ("legacy", "model", "model-fast"):
 
             def legacy_fast_key(t: Target) -> tuple[int, float, int]:
                 return (over_of(t), metrics.score(t.name), used_of(t))
@@ -336,7 +343,7 @@ class Pool:
             def legacy_fair_key(t: Target) -> tuple[int, int, int]:
                 return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
 
-            key = legacy_fast_key if self.routing == "model-fast" else legacy_fair_key
+            key = legacy_fast_key if mode == "model-fast" else legacy_fair_key
             return sorted(targets, key=key)
 
         by_provider: dict[str, _ProviderOrderStats] = {}
@@ -358,7 +365,7 @@ class Pool:
         def target_fast_key(t: Target) -> tuple[int, float, int]:
             return (over_of(t), metrics.score(t.name), used_of(t))
 
-        if self.routing == "fast":
+        if mode == "fast":
 
             def provider_fast_key(provider_id: str) -> tuple[int, float, int]:
                 stats = by_provider[provider_id]
@@ -431,6 +438,7 @@ class Pool:
         timeout: float = 90.0,
         tools: list | None = None,
         tool_choice=None,
+        routing: str | None = None,
     ) -> Reply:
         """Like :meth:`ask` but takes raw OpenAI-style ``messages``."""
         if not self.providers:
@@ -439,10 +447,18 @@ class Pool:
             )
 
         provider_list = list(providers) if providers else None
+        # Resolve the effective routing mode *before* the cache key so that a
+        # per-request override (fast/quality/fair/…) keys its own cache bucket and
+        # never serves a reply produced under a different mode's intent.
+        eff = (
+            routing
+            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            else self.routing
+        )
         cache_key = None
         if self._cache is not None:
             cache_key = self._cache.make_key(
-                messages, model, provider_list, max_tokens, temperature, tools, tool_choice
+                messages, model, provider_list, max_tokens, temperature, tools, tool_choice, eff
             )
             hit = self._cache.get(cache_key)
             if hit is not None:
@@ -458,11 +474,11 @@ class Pool:
                     cached=True,
                 )
 
-        difficulty = (
-            prompt_difficulty(messages, max_tokens, tools) if self.routing == "quality" else None
-        )
+        difficulty = prompt_difficulty(messages, max_tokens, tools) if eff == "quality" else None
         targets = self._order(
-            self._all_targets(include=provider_list, model=model), difficulty=difficulty
+            self._all_targets(include=provider_list, model=model),
+            difficulty=difficulty,
+            routing=routing,
         )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
@@ -599,6 +615,7 @@ class Pool:
         max_tokens: int = 1024,
         temperature: float = 0.0,
         timeout: float = 90.0,
+        routing: str | None = None,
     ):
         """Stream content deltas with token-level streaming.
 
@@ -609,9 +626,16 @@ class Pool:
         """
         if not self.providers:
             raise NoProvidersConfigured("no provider has an API key set")
-        difficulty = prompt_difficulty(messages, max_tokens) if self.routing == "quality" else None
+        eff = (
+            routing
+            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            else self.routing
+        )
+        difficulty = prompt_difficulty(messages, max_tokens) if eff == "quality" else None
         targets = self._order(
-            self._all_targets(include=providers, model=model), difficulty=difficulty
+            self._all_targets(include=providers, model=model),
+            difficulty=difficulty,
+            routing=routing,
         )
         targets = [t for t in targets if t.provider.adapter != "gemini"]
         if not targets:

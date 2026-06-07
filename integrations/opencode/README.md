@@ -1,0 +1,82 @@
+# freellmpool plugin for OpenCode
+
+See which free provider/model is actually serving you, check usage and rate-limits,
+and control routing quality — all from inside [OpenCode](https://opencode.ai).
+
+It talks to a running [freellmpool](https://github.com/0xzr/freellmpool) proxy
+(`freellmpool proxy`, default `http://localhost:8765`).
+
+## What it adds
+
+- **`freellmpool_status` tool** — usage and estimated $ saved, per-provider quota /
+  rate-limit / cooldown / latency, the current routing mode, and the most-recently
+  served provider+model. Pass `verbose: true` for per-model detail. Ask the agent
+  things like *"check freellmpool status"* or *"how much quota is left?"*.
+- **`freellmpool_models` tool** — lists the model ids the proxy exposes (including the
+  routing aliases `auto` / `fast` / `quality` / `fair`).
+- **served-model toast** — after each reply, a small toast shows which provider+model
+  actually answered. OpenCode itself only knows the alias you picked
+  (`freellmpool/auto`), so the real target is read back from the proxy. Silence it with
+  `FREELLMPOOL_TOAST=0`.
+
+## Controlling routing (quality)
+
+Routing is chosen by the **model name** in OpenCode's model picker — no extra config:
+
+| Model | Routing |
+| --- | --- |
+| `freellmpool/auto` | proxy default (whatever `FREELLMPOOL_ROUTING` is set to) |
+| `freellmpool/fast` | lowest-latency provider first |
+| `freellmpool/quality` | match the model's capability to the prompt's difficulty |
+| `freellmpool/fair` | spread load across providers (preserve quota) |
+
+(Advanced: send an `X-Freellmpool-Routing: fast|quality|fair` header instead.)
+
+## Install
+
+**Option A — drop-in (no build):**
+
+```sh
+mkdir -p ~/.config/opencode/plugin
+cp freellmpool.js ~/.config/opencode/plugin/
+```
+
+**Option B — reference from your `opencode.json` / `opencode.jsonc`:**
+
+```jsonc
+{
+  "plugin": ["/absolute/path/to/integrations/opencode/freellmpool.js"]
+}
+```
+
+Then make sure the proxy is running (`freellmpool proxy`) and that OpenCode has a
+`freellmpool` provider pointed at it (`baseURL: http://localhost:8765/v1`). Add the
+routing aliases as models so you can pick them:
+
+```jsonc
+{
+  "provider": {
+    "freellmpool": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://localhost:8765/v1" },
+      "models": {
+        "auto": {},
+        "fast": {},
+        "quality": {},
+        "fair": {}
+      }
+    }
+  }
+}
+```
+
+## Configuration (env)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FREELLMPOOL_PROXY_URL` | `http://localhost:8765` | proxy base URL |
+| `FREELLMPOOL_PROXY_KEY` | _(none)_ | sent as `Authorization: Bearer <key>` if your proxy requires one |
+| `FREELLMPOOL_TOAST` | on | set to `0`/`false`/`off` to silence the served-model toast |
+
+The plugin never throws on a down proxy — the tools return a short message and the
+toast hook stays quiet.

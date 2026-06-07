@@ -460,3 +460,75 @@ def test_null_assistant_content_not_stringified():
     out = _normalize_messages([{"role": "assistant", "content": None, "tool_calls": [{"id": "x"}]}])
     assert out[0]["content"] == ""
     assert out[0]["tool_calls"] == [{"id": "x"}]
+
+
+# ---- JSON /status endpoint + per-request routing control ----
+
+
+def _get_json(url, headers=None):
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req) as resp:  # noqa: S310 (localhost test)
+        return resp.status, json.load(resp)
+
+
+def test_status_endpoint_shape(server):
+    status, body = _get_json(server + "/status")
+    assert status == 200
+    assert "routing" in body
+    for k in ("requests", "prompt_tokens", "completion_tokens", "cache_hits", "usd_saved"):
+        assert k in body["pool"]
+    assert isinstance(body["providers"], list) and body["providers"]
+    p = body["providers"][0]
+    assert {"id", "configured", "cooldown_remaining_s", "models"} <= set(p)
+    assert isinstance(body["recent"], list)
+
+
+def test_status_v1_alias(server):
+    assert _get_json(server + "/v1/status")[0] == 200
+
+
+def test_status_records_served_target(server):
+    _post_json(
+        server + "/v1/chat/completions",
+        {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    _, body = _get_json(server + "/status")
+    assert body["recent"], "expected a recent entry after a chat"
+    assert {"provider", "model", "attempts"} <= set(body["recent"][0])
+    assert body["pool"]["requests"] >= 1
+
+
+def test_models_route_includes_routing_aliases(server):
+    with urllib.request.urlopen(server + "/v1/models") as resp:  # noqa: S310
+        ids = {m["id"] for m in json.load(resp)["data"]}
+    assert {"auto", "fast", "quality", "fair"} <= ids
+
+
+def test_model_name_is_treated_as_routing_keyword(server):
+    # "fast" is a routing keyword, not a literal model id → served as auto + fast routing
+    status, body = _post_json(
+        server + "/v1/chat/completions",
+        {"model": "fast", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert status == 200
+    assert "x_freellmpool" in body
+
+
+def test_header_routing_override_accepted(server):
+    status, body = _post_json_with_headers(
+        server + "/v1/chat/completions",
+        {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+        {"X-Freellmpool-Routing": "fast"},
+    )
+    assert status == 200
+    assert "x_freellmpool" in body
+
+
+def _post_json_with_headers(url, payload, headers):
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", **headers},
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310 (localhost test)
+        return resp.status, json.load(resp)

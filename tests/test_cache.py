@@ -26,6 +26,15 @@ def test_make_key_includes_tool_choice():
     assert k_auto != k_req  # different tool_choice → different cache entry
 
 
+def test_make_key_includes_routing():
+    # a per-request routing override must not collide with a different mode's cache:
+    # a "quality" ask should never be served a cached "fast"-routed reply.
+    args = ([{"role": "user", "content": "hi"}], None, None, 1024, 0.0, None, None)
+    assert Cache.make_key(*args, routing="fast") != Cache.make_key(*args, routing="quality")
+    # the same effective mode still shares a bucket
+    assert Cache.make_key(*args, routing="fair") == Cache.make_key(*args, routing="fair")
+
+
 def test_pool_uses_cache(providers, env, quota, tmp_path):
     cache = Cache(ttl=999.0, path=tmp_path / "c.db")
     post = make_post({})  # returns "ok", counts calls

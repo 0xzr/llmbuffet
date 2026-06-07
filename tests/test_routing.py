@@ -225,3 +225,47 @@ def test_quality_achat_end_to_end(tmp_path, monkeypatch, quota):
     apool = AsyncPool(pool, apost=apost)
     assert asyncio.run(apool.achat(_EASY)).model == "small"
     assert asyncio.run(apool.achat(_HARD)).model == "big"
+
+
+# ---- per-request routing override (thread-safe; does not mutate self.routing) ----
+
+
+def test_order_routing_override_beats_default(tmp_path, monkeypatch, quota):
+    """A pool whose default is *not* quality still honors routing='quality' per call."""
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.9, "small": 0.2},
+        models=[Model("big"), Model("small")],
+    )
+    pool.routing = "fair"  # flip default away from quality
+    targets = pool._all_targets()
+    # the per-call override reorders by capability even though the default is fair
+    assert pool._order(targets, difficulty=0.9, routing="quality")[0].model == "big"
+    # and it never mutates the pool's default
+    assert pool.routing == "fair"
+
+
+def test_order_invalid_routing_override_falls_back_to_default(tmp_path, monkeypatch, quota):
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.9, "small": 0.2},
+        models=[Model("big"), Model("small")],
+    )
+    pool.routing = "fair"
+    targets = pool._all_targets()
+    # a bogus override is ignored → identical to the pool default ordering
+    assert [t.model for t in pool._order(targets, routing="bogus")] == [
+        t.model for t in pool._order(targets)
+    ]
+
+
+def test_chat_routing_override_end_to_end(tmp_path, monkeypatch, quota):
+    pool = _qpool(tmp_path, monkeypatch, quota)
+    pool.routing = "fast"  # default no longer computes difficulty
+    # a per-call routing="quality" still sends the hard prompt to the strong model
+    assert pool.chat(_HARD, routing="quality").model == "big"
+    assert pool.routing == "fast"  # default untouched
