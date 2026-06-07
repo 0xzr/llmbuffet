@@ -66,7 +66,10 @@ client with three adapters, a quota counter, and a proxy that wraps the router.
 2. Providers are sorted least-used-today first, then targets inside each provider
    are sorted least-used-first. Pools over their daily hint sink to the back but
    remain reachable as a last resort. `FREELLMPOOL_ROUTING=legacy` restores the
-   old per-target ordering.
+   old per-target ordering; `=fast` orders by measured latency; `=quality` orders
+   by benchmark-scored capability matched to the prompt's estimated difficulty
+   (see `capability.py` — strong models for hard prompts, light ones for easy
+   prompts, so scarce strong-model quota is rationed across the day).
 3. For each target: call the provider; on a non-empty success, record one unit
    of quota and return the normalized `Reply`.
 4. If every target fails, raise `AllProvidersExhausted` with the per-target

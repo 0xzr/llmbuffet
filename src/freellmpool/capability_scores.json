@@ -1,0 +1,378 @@
+{
+  "meta": {
+    "aider_models": 158,
+    "arena_models": 218,
+    "mapped": 92,
+    "sources": "LMArena Elo (mathewhe/chatbot-arena-elo, MIT) + Aider leaderboard (Apache-2.0); percentile-rank; ~ = same-family/size approximation"
+  },
+  "scores": {
+    "aya-expanse-32b": {
+      "score": 0.5156,
+      "source": "arena"
+    },
+    "codellama-70b": {
+      "score": 0.1458,
+      "source": "arena"
+    },
+    "codestral": {
+      "score": 0.3759,
+      "source": "aider"
+    },
+    "codestral-22b-instruct-v0.1": {
+      "score": 0.3308,
+      "source": "aider~"
+    },
+    "command-a": {
+      "score": 0.8203,
+      "source": "arena"
+    },
+    "command-r": {
+      "score": 0.5339,
+      "source": "arena"
+    },
+    "command-r-plus": {
+      "score": 0.1429,
+      "source": "aider"
+    },
+    "command-r7b": {
+      "score": 0.5339,
+      "source": "arena"
+    },
+    "dbrx": {
+      "score": 0.3021,
+      "source": "arena"
+    },
+    "deepseek-r1": {
+      "score": 0.9766,
+      "source": "arena"
+    },
+    "deepseek-r1-distill-qwen-32b": {
+      "score": 0.862,
+      "source": "arena~"
+    },
+    "deepseek-v3": {
+      "score": 0.9453,
+      "source": "arena"
+    },
+    "dolphin-mistral-24b-venice-edition": {
+      "score": 0.6224,
+      "source": "arena~"
+    },
+    "dracarys-llama-3.1-70b": {
+      "score": 0.6719,
+      "source": "arena~"
+    },
+    "gemini-2.0-flash": {
+      "score": 0.8854,
+      "source": "arena"
+    },
+    "gemini-2.0-flash-lite": {
+      "score": 0.8255,
+      "source": "arena"
+    },
+    "gemini-2.5-flash": {
+      "score": 0.9661,
+      "source": "arena"
+    },
+    "gemma-2-2b": {
+      "score": 0.3776,
+      "source": "arena"
+    },
+    "gemma-2b": {
+      "score": 0.0755,
+      "source": "arena"
+    },
+    "gemma-3-12b": {
+      "score": 0.8438,
+      "source": "arena"
+    },
+    "gemma-3-4b": {
+      "score": 0.7057,
+      "source": "arena"
+    },
+    "gemma-3n-e2b": {
+      "score": 0.3776,
+      "source": "arena~"
+    },
+    "gemma-3n-e4b": {
+      "score": 0.75,
+      "source": "arena"
+    },
+    "gemma-7b": {
+      "score": 0.1328,
+      "source": "arena"
+    },
+    "gemma-sea-lion-v4-27b": {
+      "score": 0.8776,
+      "source": "arena~"
+    },
+    "gemma3-12b": {
+      "score": 0.8438,
+      "source": "arena"
+    },
+    "gemma3-27b": {
+      "score": 0.8776,
+      "source": "arena"
+    },
+    "gemma3-4b": {
+      "score": 0.7057,
+      "source": "arena"
+    },
+    "gpt-4.1": {
+      "score": 0.9505,
+      "source": "arena"
+    },
+    "gpt-4.1-mini": {
+      "score": 0.8438,
+      "source": "arena"
+    },
+    "gpt-4.1-nano": {
+      "score": 0.6875,
+      "source": "arena"
+    },
+    "gpt-4o": {
+      "score": 0.7318,
+      "source": "arena"
+    },
+    "gpt-4o-mini": {
+      "score": 0.6875,
+      "source": "arena"
+    },
+    "granite-3.0-8b": {
+      "score": 0.2812,
+      "source": "arena"
+    },
+    "granite-8b-code": {
+      "score": 0.3724,
+      "source": "arena~"
+    },
+    "grok-3": {
+      "score": 0.9714,
+      "source": "arena"
+    },
+    "grok-3-mini": {
+      "score": 0.8724,
+      "source": "arena"
+    },
+    "hermes-3-llama-3.1-405b": {
+      "score": 0.6541,
+      "source": "aider"
+    },
+    "jamba-1.5-large": {
+      "score": 0.5651,
+      "source": "arena"
+    },
+    "llama-2-7b": {
+      "score": 0.1328,
+      "source": "arena"
+    },
+    "llama-3-3-70b": {
+      "score": 0.638,
+      "source": "arena"
+    },
+    "llama-3.1-405b": {
+      "score": 0.6719,
+      "source": "arena"
+    },
+    "llama-3.1-70b": {
+      "score": 0.6068,
+      "source": "arena"
+    },
+    "llama-3.1-8b": {
+      "score": 0.4271,
+      "source": "arena"
+    },
+    "llama-3.1-nemotron-51b": {
+      "score": 0.5234,
+      "source": "arena"
+    },
+    "llama-3.1-nemotron-70b": {
+      "score": 0.6719,
+      "source": "arena"
+    },
+    "llama-3.1-nemotron-nano-8b-v1": {
+      "score": 0.4557,
+      "source": "arena~"
+    },
+    "llama-3.1-nemotron-nano-vl-8b-v1": {
+      "score": 0.4557,
+      "source": "arena~"
+    },
+    "llama-3.1-nemotron-ultra-253b-v1": {
+      "score": 0.7969,
+      "source": "arena"
+    },
+    "llama-3.2-1b": {
+      "score": 0.1797,
+      "source": "arena"
+    },
+    "llama-3.2-3b": {
+      "score": 0.3021,
+      "source": "arena"
+    },
+    "llama-3.3-70b": {
+      "score": 0.638,
+      "source": "arena"
+    },
+    "llama-3.3-70b-instruct-fp8-fast": {
+      "score": 0.6719,
+      "source": "arena~"
+    },
+    "llama-3.3-nemotron-super-49b-v1": {
+      "score": 0.7656,
+      "source": "arena"
+    },
+    "llama-3.3-nemotron-super-49b-v1.5": {
+      "score": 0.7656,
+      "source": "arena~"
+    },
+    "llama-4-maverick-17b-128e": {
+      "score": 0.7109,
+      "source": "arena"
+    },
+    "llama-4-scout-17b-16e": {
+      "score": 0.6536,
+      "source": "arena"
+    },
+    "llama2-70b": {
+      "score": 0.2812,
+      "source": "arena"
+    },
+    "llama3-chatqa-1.5-70b": {
+      "score": 0.6719,
+      "source": "arena~"
+    },
+    "llama3.1-8b": {
+      "score": 0.4271,
+      "source": "arena"
+    },
+    "magistral-medium": {
+      "score": 0.5755,
+      "source": "arena"
+    },
+    "ministral-3-8b": {
+      "score": 0.4505,
+      "source": "arena~"
+    },
+    "ministral-8b": {
+      "score": 0.4505,
+      "source": "arena"
+    },
+    "mistral-7b-instruct-v0.2": {
+      "score": 0.2214,
+      "source": "arena"
+    },
+    "mistral-7b-instruct-v0.3": {
+      "score": 0.2214,
+      "source": "arena~"
+    },
+    "mistral-large": {
+      "score": 0.6172,
+      "source": "arena"
+    },
+    "mistral-large-2": {
+      "score": 0.5902,
+      "source": "aider"
+    },
+    "mistral-medium": {
+      "score": 0.3906,
+      "source": "arena"
+    },
+    "mistral-medium-3": {
+      "score": 0.9297,
+      "source": "arena"
+    },
+    "mistral-nemo-12b": {
+      "score": 0.1692,
+      "source": "aider~"
+    },
+    "mistral-small": {
+      "score": 0.8359,
+      "source": "arena"
+    },
+    "mistral-small-3.1-24b": {
+      "score": 0.6224,
+      "source": "arena"
+    },
+    "mistral-small-3.2-24b": {
+      "score": 0.6224,
+      "source": "arena~"
+    },
+    "mixtral-8x22b-v0.1": {
+      "score": 0.3906,
+      "source": "arena~"
+    },
+    "mixtral-8x7b-instruct-v0.1": {
+      "score": 0.3359,
+      "source": "arena"
+    },
+    "nemotron-4-340b": {
+      "score": 0.5156,
+      "source": "arena"
+    },
+    "o1": {
+      "score": 0.9089,
+      "source": "arena"
+    },
+    "o1-mini": {
+      "score": 0.7839,
+      "source": "arena"
+    },
+    "o3": {
+      "score": 0.9818,
+      "source": "arena"
+    },
+    "o3-mini": {
+      "score": 0.7786,
+      "source": "arena"
+    },
+    "o4-mini": {
+      "score": 0.8958,
+      "source": "arena"
+    },
+    "phi-4": {
+      "score": 0.4896,
+      "source": "arena"
+    },
+    "qwen-3-235b-a22b": {
+      "score": 0.9141,
+      "source": "arena"
+    },
+    "qwen-qwq-32b": {
+      "score": 0.862,
+      "source": "arena~"
+    },
+    "qwen2.5-coder-32b": {
+      "score": 0.5469,
+      "source": "arena"
+    },
+    "qwen2.5-vl-72b": {
+      "score": 0.6328,
+      "source": "arena~"
+    },
+    "qwen3-235b": {
+      "score": 0.9557,
+      "source": "arena~"
+    },
+    "qwen3-30b-a3b": {
+      "score": 0.7969,
+      "source": "arena"
+    },
+    "qwen3-32b": {
+      "score": 0.862,
+      "source": "arena"
+    },
+    "qwen3-coder-30b-a3b": {
+      "score": 0.7969,
+      "source": "arena~"
+    },
+    "qwen3-vl-235b": {
+      "score": 0.9557,
+      "source": "arena~"
+    },
+    "solar-10.7b": {
+      "score": 0.1901,
+      "source": "arena~"
+    }
+  }
+}

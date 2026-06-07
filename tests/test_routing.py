@@ -2,13 +2,57 @@
 
 from __future__ import annotations
 
-from helpers import make_post
+from helpers import make_post, make_stream_post
 
+from freellmpool import capability as _capability
+from freellmpool.models import Model, Provider
 from freellmpool.router import Pool
+
+_EASY = [{"role": "user", "content": "hi"}]
+_HARD = [
+    {
+        "role": "user",
+        "content": "Debug and refactor this algorithm:\n```python\ndef f():\n  pass\n```\n"
+        "Explain step by step why it is slow.",
+    }
+]
 
 
 def _names(pool, **kw):
     return [t.name for t in pool._order(pool._all_targets(**kw))]
+
+
+def _quality_pool(tmp_path, monkeypatch, quota, *, scores, models):
+    """A quality-routing pool over ``models`` with an injected capability table.
+
+    All providers succeed (200), so whichever target quality routing puts first is
+    the one that actually serves — letting end-to-end tests assert on `reply.model`.
+    """
+    import json
+
+    cap_file = tmp_path / "cap.json"
+    cap_file.write_text(
+        json.dumps({"scores": {k: {"score": v, "source": "arena"} for k, v in scores.items()}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FREELLMPOOL_CAPABILITY_FILE", str(cap_file))
+    _capability._table_cached.cache_clear()
+    provider = Provider(
+        id="x",
+        label="X",
+        adapter="openai",
+        base_url="https://x.test/v1",
+        key_env="X_KEY",
+        models=tuple(models),
+    )
+    return Pool(
+        [provider],
+        quota=quota,
+        env={"X_KEY": "k"},
+        post=make_post({}),
+        stream_post=make_stream_post({}),
+        routing="quality",
+    )
 
 
 def test_fair_default_is_least_used(providers, env, quota):
@@ -88,3 +132,96 @@ def test_402_capability_error_not_health_failure(providers, env, quota):
     pool.chat([{"role": "user", "content": "hi"}], providers=["alpha", "beta"])
     st = pool.metrics.get("alpha/alpha-small")
     assert st is None or st.fail == 0
+
+
+def test_quality_matches_difficulty_to_capability(tmp_path, monkeypatch, quota):
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.9, "small": 0.2},
+        models=[Model("big"), Model("small")],
+    )
+    targets = pool._all_targets()
+    # hard prompt → strong model first; easy prompt → light model first (rationing)
+    assert pool._order(targets, difficulty=0.9)[0].model == "big"
+    assert pool._order(targets, difficulty=0.1)[0].model == "small"
+
+
+def test_quality_over_budget_model_sinks(tmp_path, monkeypatch, quota):
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.9, "small": 0.2},
+        models=[Model("big", rpd=1), Model("small")],
+    )
+    quota.record("x", "big", 1)  # big is now over its daily cap
+    # even for a hard prompt, an over-budget strong model sinks behind a usable one
+    order = [t.model for t in pool._order(pool._all_targets(), difficulty=0.9)]
+    assert order[0] == "small"
+    assert order[-1] == "big"  # still reachable, just last
+
+
+def test_quality_failing_model_sinks(tmp_path, monkeypatch, quota):
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.9, "small": 0.2},
+        models=[Model("big"), Model("small")],
+    )
+    for _ in range(3):  # enough samples to mark "big" as failing
+        pool.metrics.record_failure("x/big", "boom")
+    order = [t.model for t in pool._order(pool._all_targets(), difficulty=0.9)]
+    assert order[0] == "small"  # a healthy light model beats a failing strong one
+
+
+# ---- end-to-end: difficulty is computed and threaded through the public APIs ----
+
+
+def _qpool(tmp_path, monkeypatch, quota):
+    # Both capabilities sit ABOVE the easy-prompt difficulty floor (~0.35), so the
+    # easy/hard split exercises rationing (prefer the right-sized model) rather than
+    # the under-powered penalty. small (0.5) wins easy; big (0.95) wins hard.
+    return _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"big": 0.95, "small": 0.5},
+        models=[Model("big"), Model("small")],
+    )
+
+
+def test_quality_chat_end_to_end(tmp_path, monkeypatch, quota):
+    # All providers return 200, so the model that actually serves is the one quality
+    # routing ordered first — proving difficulty is computed and threaded in chat().
+    pool = _qpool(tmp_path, monkeypatch, quota)
+    assert pool.chat(_EASY).model == "small"
+    assert pool.chat(_HARD).model == "big"
+
+
+def test_quality_stream_chat_end_to_end(tmp_path, monkeypatch, quota):
+    pool = _qpool(tmp_path, monkeypatch, quota)
+
+    def served(messages):
+        meta = next(pool.stream_chat(messages))  # first yield is {"provider","model"}
+        return meta["model"]
+
+    assert served(_EASY) == "small"
+    assert served(_HARD) == "big"
+
+
+def test_quality_achat_end_to_end(tmp_path, monkeypatch, quota):
+    import asyncio
+
+    from freellmpool.aio import AsyncPool
+
+    pool = _qpool(tmp_path, monkeypatch, quota)
+
+    async def apost(url, headers, body, timeout):
+        return pool._post(url, headers, body, timeout)
+
+    apool = AsyncPool(pool, apost=apost)
+    assert asyncio.run(apool.achat(_EASY)).model == "small"
+    assert asyncio.run(apool.achat(_HARD)).model == "big"

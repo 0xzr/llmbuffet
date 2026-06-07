@@ -519,6 +519,56 @@ def cmd_catalog_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capability_sync(args: argparse.Namespace) -> int:
+    from .capability import sync_capability_table
+
+    aa_key = os.environ.get("FREELLMPOOL_AA_API_KEY")
+    path, stats = sync_capability_table(timeout=args.timeout, aa_api_key=aa_key)
+    by_source = ", ".join(f"{k}={v}" for k, v in sorted(stats["by_source"].items()))
+    print(f"Synced capability scores → {path}")
+    print(
+        f"  benchmark models fetched: arena={stats['arena']}  "
+        f"aider={stats['aider']}  aa={stats['aa']}"
+    )
+    print(f"  catalog models mapped: {stats['mapped']} ({by_source or 'none'})")
+    if not aa_key:
+        print(
+            "  Artificial Analysis skipped — set FREELLMPOOL_AA_API_KEY for much broader "
+            "coverage (its Intelligence Index covers most current/open models and wins)."
+        )
+    print("  Models not covered by a benchmark fall back to a name heuristic at runtime.")
+    # Source attribution (required for Artificial Analysis; courtesy for the rest).
+    sources = ["LMArena (https://lmarena.ai/)", "Aider (https://aider.chat/)"]
+    if stats["aa"]:
+        sources.append("Artificial Analysis (https://artificialanalysis.ai/)")
+    print("  Scores via " + ", ".join(sources) + ".")
+    return 0
+
+
+def cmd_capability_status(args: argparse.Namespace) -> int:
+    from .capability import capability_table, model_capability, user_capability_path
+    from .config import load_catalog
+
+    table = capability_table()
+    user = user_capability_path()
+    print(f"Capability scores: {len(table)} benchmark-scored models")
+    print(f"  user cache: {user if user.exists() else '(none — using bundled snapshot)'}")
+    names = sorted({m.name for p in load_catalog() for m in p.models})
+    scored = sorted(((model_capability(n, table), n) for n in names), reverse=True)
+    covered = sum(1 for n in names if _in_table(n, table))
+    print(f"  catalog models with a benchmark score: {covered}/{len(names)} (rest use heuristic)")
+    print(f"  top {args.limit} catalog models by capability:")
+    for cap, name in scored[: args.limit]:
+        print(f"    {cap:.3f}  {name}")
+    return 0
+
+
+def _in_table(name: str, table) -> bool:
+    from .capability import normalize_model_name
+
+    return normalize_model_name(name) in table
+
+
 def cmd_proxy(args: argparse.Namespace) -> int:
     from .proxy import serve  # lazy: avoids http.server import on other paths
 
@@ -697,6 +747,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit", type=int, default=10, help="number of providers to show"
     )
     p_catalog_status.set_defaults(func=cmd_catalog_status)
+
+    p_capability = sub.add_parser(
+        "capability", help="benchmark-scored model capability for quality routing"
+    )
+    capability_sub = p_capability.add_subparsers(dest="capability_command", required=True)
+    p_cap_sync = capability_sub.add_parser(
+        "sync", help="refresh capability scores from public benchmarks (Arena; AA with a key)"
+    )
+    p_cap_sync.add_argument("--timeout", type=float, default=20.0, help="download timeout seconds")
+    p_cap_sync.set_defaults(func=cmd_capability_sync)
+    p_cap_status = capability_sub.add_parser(
+        "status", help="show capability-score coverage and the top-scoring models"
+    )
+    p_cap_status.add_argument("--limit", type=int, default=15, help="number of models to show")
+    p_cap_status.set_defaults(func=cmd_capability_status)
 
     p_capacity = sub.add_parser("capacity", help="summarize legitimate LLM capacity")
     capacity_sub = p_capacity.add_subparsers(dest="capacity_command", required=True)

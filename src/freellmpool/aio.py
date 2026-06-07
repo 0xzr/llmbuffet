@@ -18,6 +18,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 
 from . import client as _client
+from .capability import prompt_difficulty
 from .client import (
     _CONNECT_TIMEOUT,
     _THINKING_FLOOR,
@@ -338,7 +339,12 @@ class AsyncPool:
                     cached=True,
                 )
 
-        targets = p._order(p._all_targets(include=provider_list, model=model))
+        difficulty = (
+            prompt_difficulty(messages, max_tokens, tools) if p.routing == "quality" else None
+        )
+        targets = p._order(
+            p._all_targets(include=provider_list, model=model), difficulty=difficulty
+        )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 

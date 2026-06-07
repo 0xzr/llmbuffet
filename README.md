@@ -239,6 +239,25 @@ per-model balancing behavior, set `FREELLMPOOL_ROUTING=legacy` or
 `FREELLMPOOL_ROUTING=model` (or `FREELLMPOOL_ROUTING=model-fast` for the old
 per-model fastest-first ordering).
 
+**Quality routing (`FREELLMPOOL_ROUTING=quality`).** Free tiers' strongest models
+have the smallest daily caps, so a naive pool gets weaker as the day fills. Quality
+routing matches each prompt's *difficulty* to each model's *capability*: hard
+prompts (long input, code, reasoning cues) go to the strongest available model, and
+easy ones go to lightweight models — which rations scarce strong-model quota so the
+pool stays sharp for longer. Capability is grounded in real benchmark data, not
+guessed from names; models no benchmark lists fall back to a name heuristic.
+
+The bundled, offline scores come from [LMArena](https://lmarena.ai/) Elo (an
+MIT-licensed snapshot) and the [Aider](https://aider.chat/) code-editing
+leaderboard (Apache-2.0), normalized to a common percentile scale. For much
+broader coverage, run `freellmpool capability sync` with a free
+[Artificial Analysis](https://artificialanalysis.ai/) API key
+(`FREELLMPOOL_AA_API_KEY`) — its Intelligence Index covers most current and
+open-weight models and takes precedence. The fetched AA data is cached locally
+under your own key (never bundled, per AA's terms). `freellmpool capability
+status` shows current coverage. Scores via LMArena and Aider; intelligence index
+via Artificial Analysis when keyed.
+
 **Context windows.** Free models often have small context windows. freellmpool
 never truncates your input; instead, when a model rejects a request as too long,
 it learns that model's limit and stops routing oversized requests there, escalating

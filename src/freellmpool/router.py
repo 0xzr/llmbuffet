@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from . import client as _client
 from .cache import Cache
+from .capability import capability_table, fit_penalty, model_capability, prompt_difficulty
 from .client import PostFn, StreamPostFn, default_post, default_stream_post
 from .config import (
     configured_embedders,
@@ -112,12 +113,14 @@ class Pool:
         self.cooldown_seconds = cooldown_seconds
         self._clock = clock or time.monotonic
         self.metrics = metrics or Metrics()
-        # "fair"  — least-used provider first, then least-used model in provider.
-        # "fast"  — lowest measured provider latency / failure penalty first.
+        # "fair"   — least-used provider first, then least-used model in provider.
+        # "fast"   — lowest measured provider latency / failure penalty first.
+        # "quality"— match prompt difficulty to model capability (benchmark-scored),
+        #            so hard prompts get strong models and easy ones get light ones.
         # "legacy"/"model" keep the old per-(provider, model) balancing behavior.
         self.routing = (
             routing
-            if routing in ("fair", "fast", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
             else "fair"
         )
         self._on_event = on_event
@@ -280,7 +283,7 @@ class Pool:
                 targets.append(Target(provider, m.name, m.rpd, m.context))
         return targets
 
-    def _order(self, targets: list[Target]) -> list[Target]:
+    def _order(self, targets: list[Target], difficulty: float | None = None) -> list[Target]:
         """Order candidate targets for failover.
 
         ``fair`` (default): least-used provider first, then least-used model inside
@@ -288,8 +291,15 @@ class Pool:
         because they expose more models.
 
         ``fast``: lowest measured provider latency / failure penalty first, then
-        least-used provider. ``legacy``/``model`` preserve the previous per-target
-        balancing. Either way the ordering is a hint — failover still reaches all.
+        least-used provider.
+
+        ``quality``: match the request's ``difficulty`` (0–1) to each model's
+        benchmark-scored capability — strong models for hard prompts, light models
+        for easy ones (rationing scarce strong-model quota). Ordered globally, not
+        provider-grouped, since capability match is the opted-in intent.
+
+        ``legacy``/``model`` preserve the previous per-target balancing. Either way
+        the ordering is a hint — failover still reaches all.
         """
 
         # One snapshot instead of a locked read per target (matters for large catalogs).
@@ -301,6 +311,22 @@ class Pool:
 
         def over_of(t: Target) -> int:
             return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
+
+        if self.routing == "quality":
+            table = capability_table()
+            need = difficulty if difficulty is not None else 0.5
+
+            def quality_key(t: Target) -> tuple[int, int, float, int]:
+                # over-budget, then known-failing sink to the back (still reachable);
+                # then best capability-fit; then least-used as a fairness tiebreak.
+                return (
+                    over_of(t),
+                    1 if metrics.failing(t.name) else 0,
+                    fit_penalty(model_capability(t.model, table), need),
+                    used_of(t),
+                )
+
+            return sorted(targets, key=quality_key)
 
         if self.routing in ("legacy", "model", "model-fast"):
 
@@ -432,7 +458,12 @@ class Pool:
                     cached=True,
                 )
 
-        targets = self._order(self._all_targets(include=provider_list, model=model))
+        difficulty = (
+            prompt_difficulty(messages, max_tokens, tools) if self.routing == "quality" else None
+        )
+        targets = self._order(
+            self._all_targets(include=provider_list, model=model), difficulty=difficulty
+        )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
@@ -578,7 +609,10 @@ class Pool:
         """
         if not self.providers:
             raise NoProvidersConfigured("no provider has an API key set")
-        targets = self._order(self._all_targets(include=providers, model=model))
+        difficulty = prompt_difficulty(messages, max_tokens) if self.routing == "quality" else None
+        targets = self._order(
+            self._all_targets(include=providers, model=model), difficulty=difficulty
+        )
         targets = [t for t in targets if t.provider.adapter != "gemini"]
         if not targets:
             raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
