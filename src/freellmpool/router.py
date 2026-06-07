@@ -284,7 +284,7 @@ class Pool:
                 if model is not None and m.name != model:
                     continue
                 try:
-                    return _client.embed(
+                    reply = _client.embed(
                         emb,
                         m.name,
                         inputs,
@@ -295,6 +295,12 @@ class Pool:
                     )
                 except Exception as exc:  # noqa: BLE001 — try the next embedder
                     attempts.append((f"{emb.id}/{m.name}", f"{type(exc).__name__}: {exc}"))
+                    continue
+                # Account for embeddings like chat: per-day quota + lifetime stats, so
+                # a heavy embedding workload doesn't bypass RPD pacing / usage totals.
+                self.quota.record(emb.id, m.name)
+                self._bump_stats(requests=1, prompt_tokens=reply.prompt_tokens or 0)
+                return reply
         raise AllProvidersExhausted(attempts)
 
     # ---- candidate ordering -------------------------------------------
@@ -544,6 +550,7 @@ class Pool:
 
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()  # providers that 429'd during THIS request
+        client_error: ProviderHTTPError | None = None  # first non-retryable 4xx seen
         # Context-window awareness: estimate the request size once, skip models we
         # already know are too small, and fail loudly if nothing fits.
         est_tokens = estimate_input_tokens(messages, tools)
@@ -602,6 +609,12 @@ class Pool:
                 # Any non-context failure (incl. a rate-limit, which might have fit)
                 # means "too long" isn't provably the whole story — stay generic.
                 non_ctx_failure = True
+                # A non-retryable 4xx usually means the request itself is invalid;
+                # remember the first one so an exhausted pool can surface the real
+                # client error instead of a generic 502. (Failover still proceeds —
+                # another provider may accept it.)
+                if not exc.retryable and client_error is None:
+                    client_error = exc
                 if _is_health_failure(exc):
                     self.metrics.record_failure(target.name, str(exc))
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
@@ -655,6 +668,10 @@ class Pool:
         emit(self._on_event, "exhausted", attempts=len(attempts))
         if ctx_overflow and not non_ctx_failure:
             raise ContextWindowExceeded(attempts, est_tokens=est_tokens)
+        if client_error is not None:
+            raise AllProvidersExhausted(
+                attempts, client_status=client_error.status, client_message=str(client_error)
+            )
         raise AllProvidersExhausted(attempts)
 
     def stream_chat(

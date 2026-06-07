@@ -476,7 +476,18 @@ def make_handler(pool: Pool, api_key: str | None = None):
             except ContextWindowExceeded as exc:
                 self._error(413, str(exc), "context_length_exceeded")
             except AllProvidersExhausted as exc:
-                self._error(502, str(exc), "all_providers_exhausted")
+                # If the pool failed because the request itself was rejected as a
+                # client error (non-retryable 4xx), surface that real status instead
+                # of a misleading generic 502.
+                cs = getattr(exc, "client_status", None)
+                if isinstance(cs, int) and 400 <= cs < 500:
+                    self._error(
+                        cs,
+                        getattr(exc, "client_message", None) or str(exc),
+                        "invalid_request_error",
+                    )
+                else:
+                    self._error(502, str(exc), "all_providers_exhausted")
             except FreeLLMPoolError as exc:  # pragma: no cover - defensive
                 self._error(500, str(exc), "freellmpool_error")
             return None
@@ -574,12 +585,26 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
                 pass  # client disconnected
-            except Exception:  # noqa: BLE001
-                # Upstream failed mid-stream. Headers are already sent, so we can't
-                # send a JSON error — close the SSE stream cleanly instead of letting
-                # do_POST attempt a 500 into the open event-stream.
+            except Exception as exc:  # noqa: BLE001
+                # Upstream failed AFTER the first token. Do NOT emit finish="stop" +
+                # [DONE] — that would make a truncated answer look complete to the
+                # client and hide the failure. Emit an SSE error event instead (the
+                # recognized streaming-error convention) and record the truncation.
+                # Headers are already sent, so an HTTP error status isn't possible.
+                pool.metrics.record_failure(
+                    f"{provider_id}/{model_name}", f"stream truncated: {exc}"
+                )
                 try:
-                    self.wfile.write(_chunk_block(cid, model_id, finish="stop").encode())
+                    err = json.dumps(
+                        {
+                            "error": {
+                                "message": "upstream stream failed mid-response; output is incomplete",
+                                "type": "upstream_error",
+                                "code": "stream_truncated",
+                            }
+                        }
+                    )
+                    self.wfile.write(f"data: {err}\n\n".encode())
                     self.wfile.write(b"data: [DONE]\n\n")
                     self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError, OSError):
