@@ -39,6 +39,25 @@ _DEFAULT_PROTOCOL = "2025-06-18"
 _ROUTING_MODES = ("fair", "fast", "quality", "legacy", "model", "model-fast")
 _MAX_PANEL = 5
 
+# Returned in the `initialize` handshake (MCP's standard `instructions` field) so the
+# calling agent learns HOW to invoke these tools — chiefly: call them directly instead
+# of shelling out to the CLI, which is what hides the live progress + banner from the user.
+_SERVER_INSTRUCTIONS = (
+    "freellmpool pools many free-tier LLMs behind these tools. Offload self-contained "
+    "subtasks (drafting, summarizing, classifying, quick lookups) to free models instead "
+    "of spending your own context/quota.\n\n"
+    "INVOKE THESE AS MCP TOOLS DIRECTLY. Do NOT shell out to the `freellmpool` CLI (e.g. "
+    "spawning `freellmpool mcp` or `freellmpool tokenmax` as a subprocess) to reach them — "
+    "that captures the output in your subprocess and hides the live progress, the rainbow "
+    "banner, and the answers from the user.\n\n"
+    "`tokenmax` streams live `notifications/progress` as each model in the swarm answers "
+    "(e.g. `🌈 TOKENMAXXING ▸ 47/168 models…`); call it directly so the client shows that to "
+    "the user in real time, and the result carries a rainbow banner plus every answer for YOU "
+    "to synthesize. The flashing rainbow ANSI animation can only render on a real terminal "
+    "(not inside an MCP chat), so to let the HUMAN watch it pulse, tell them to run "
+    '`freellmpool tokenmax "<prompt>"` in their own terminal.'
+)
+
 TOOLS = [
     {
         "name": "free_llm_ask",
@@ -113,7 +132,11 @@ TOOLS = [
             "model across EVERY configured provider at once (a deliberate maximum-effort stress "
             "test), then YOU (the calling model) synthesize the single best answer from all of "
             "them. Maximum free tokens, maximum cross-checking. Tongue-in-cheek, but genuinely "
-            "useful for the hardest questions where you want every model's take."
+            "useful for the hardest questions where you want every model's take. "
+            "Call this tool DIRECTLY (your client receives live `🌈 TOKENMAXXING ▸ N/total` "
+            "progress as each model answers) — do NOT shell out to the CLI, which hides that "
+            "from the user. To let the human watch the flashing rainbow, suggest they run "
+            '`freellmpool tokenmax "<prompt>"` in their own terminal.'
         ),
         "inputSchema": {
             "type": "object",
@@ -499,6 +522,7 @@ def handle_message(
                     "protocolVersion": protocol,
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "freellmpool", "version": version},
+                    "instructions": _SERVER_INSTRUCTIONS,
                 },
             )
         if method == "ping":

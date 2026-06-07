@@ -28,6 +28,12 @@ def test_initialize(providers, env, quota):
     assert resp["result"]["serverInfo"]["name"] == "freellmpool"
     assert resp["result"]["protocolVersion"] == "2025-06-18"
     assert "tools" in resp["result"]["capabilities"]
+    # The handshake teaches agents to invoke tools directly (not via the CLI), which is
+    # what lets tokenmax's live progress reach the user instead of a hidden subprocess.
+    instructions = resp["result"]["instructions"]
+    assert "tokenmax" in instructions
+    assert "directly" in instructions.lower()
+    assert "freellmpool tokenmax" in instructions  # how the human sees the flashing animation
 
 
 def test_notification_gets_no_reply(providers, env, quota):

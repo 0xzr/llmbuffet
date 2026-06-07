@@ -77,6 +77,11 @@ Pass them through the MCP server's environment, e.g. in the config:
 - The server speaks newline-delimited JSON-RPC 2.0 over stdio (the standard MCP
   stdio transport) and is implemented on the Python standard library only.
 - `stdout` carries the protocol; freellmpool prints its banner to `stderr`.
+- **Invoke the tools directly.** The `initialize` handshake returns an
+  `instructions` field telling the calling agent to call these as MCP tools — **not**
+  to shell out to the `freellmpool` CLI as a subprocess. Subprocessing captures the
+  output inside the agent's process and hides `tokenmax`'s live progress, the rainbow
+  banner, and the answers from the user.
 - **Live `tokenmax` progress:** when a client passes a `progressToken` (Claude
   Code does), `tokenmax` streams `notifications/progress` as each model answers, so
   you see the swarm tick up in real time. Raw ANSI can't animate inside an MCP
