@@ -74,10 +74,17 @@ AGENTS: dict[str, dict] = {
             '    "freellmpool": {',
             '      "npm": "@ai-sdk/openai-compatible",',
             f'      "options": {{ "baseURL": "{_PROXY}" }},',
-            '      "models": { "auto": { "name": "freellmpool (auto)" } }',
+            '      "models": {',
+            '        "auto": {}, "fast": {}, "quality": {}, "fair": {}',
+            "      }",
             "    }",
             "  }",
+            "Pick freellmpool/{auto,fast,quality,fair} to control routing.",
         ],
+        "note": (
+            "Embedded dashboard + status/usage tools live in integrations/opencode "
+            "(server) and integrations/opencode-tui (live TUI panel)."
+        ),
     },
 }
 
