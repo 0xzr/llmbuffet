@@ -37,6 +37,7 @@ from .metrics import Metrics
 from .models import EmbedReply, Provider, Reply
 from .observe import EventHook, emit
 from .quota import QuotaStore
+from .stats import StatsStore
 
 # A parsed "context limit" below this is treated as garbled/implausible and not
 # learned, so one bad provider error can't poison routing pool-wide.
@@ -110,6 +111,7 @@ class Pool:
         metrics: Metrics | None = None,
         routing: str = "fair",
         on_event: EventHook | None = None,
+        stats_store: StatsStore | None = None,
     ):
         self.providers = providers
         self.embedders = embedders or []
@@ -135,8 +137,11 @@ class Pool:
         # provider_id -> monotonic time until which to deprioritize after a 429
         self._cooldown_until: dict[str, float] = {}
         self._cooldown_lock = threading.Lock()
-        # cumulative usage for the "$ saved vs OpenAI" metric
+        # cumulative usage for the "$ saved vs OpenAI" metric. `self.stats` is the
+        # in-memory session counter; `_stats_store` (optional) persists lifetime
+        # totals across restarts so the served-free / avoided-cost number grows.
         self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0}
+        self._stats_store = stats_store
         self._stats_lock = threading.Lock()  # the proxy serves requests on many threads
         # Context-window limits learned from provider errors, keyed by provider/model.
         # Lets the pool stop routing oversized requests to models it has seen reject
@@ -145,10 +150,32 @@ class Pool:
         self._ctx_lock = threading.Lock()
 
     def _bump_stats(self, **deltas: int) -> None:
-        """Thread-safe read-modify-write of the cumulative stats counters."""
+        """Thread-safe read-modify-write of the session stats counters, plus a
+        write-through to the persistent lifetime store (outside the in-memory lock
+        so disk I/O never serializes request accounting)."""
         with self._stats_lock:
             for key, delta in deltas.items():
                 self.stats[key] = self.stats.get(key, 0) + delta
+        if self._stats_store is not None:
+            self._stats_store.add(**deltas)
+
+    def stats_snapshot(self) -> dict:
+        """A consistent copy of the session stats counters, read under the lock so
+        readers (/status, MCP, CLI) never see a torn requests/tokens pair."""
+        with self._stats_lock:
+            return dict(self.stats)
+
+    def cooldown_snapshot(self, now: float) -> dict[str, float]:
+        """provider_id -> seconds remaining on cooldown, read under the lock."""
+        with self._cooldown_lock:
+            return {pid: max(0.0, until - now) for pid, until in self._cooldown_until.items()}
+
+    def lifetime_stats(self) -> dict:
+        """Persistent lifetime totals (+ first_seen), or the in-memory session
+        totals if no persistent store is wired."""
+        if self._stats_store is not None:
+            return self._stats_store.snapshot()
+        return {**self.stats_snapshot(), "first_seen": None}
 
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
         until = now + self.cooldown_seconds
@@ -230,6 +257,7 @@ class Pool:
             cache=cache,
             routing=routing,
             on_event=on_event,
+            stats_store=StatsStore(),
         )
 
     def embed(

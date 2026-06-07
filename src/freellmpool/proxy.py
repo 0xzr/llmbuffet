@@ -25,10 +25,11 @@ import collections
 import hmac
 import json
 import os
+import re
 import threading
 from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from .anthropic_shim import estimate_tokens, reply_to_message, reply_to_sse, request_to_chat
 from .config import known_aliases, resolve_alias
@@ -80,6 +81,19 @@ def _anthropic_models_payload(pool: Pool) -> dict:
     }
 
 
+def _provider_leaderboard(pool: Pool, limit: int = 5) -> list[tuple[str, float]]:
+    """Top providers by requests served today, as (id, fraction-of-leader) — feeds
+    the summary card's 'provider race'."""
+    snap = pool.quota.snapshot()
+    totals: dict[str, int] = {}
+    for key, count in snap.items():
+        pid = key.split("::", 1)[0]
+        totals[pid] = totals.get(pid, 0) + int(count)
+    ranked = sorted(totals.items(), key=lambda kv: -kv[1])[:limit]
+    top = ranked[0][1] if ranked and ranked[0][1] > 0 else 1
+    return [(pid, count / top) for pid, count in ranked if count > 0]
+
+
 def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
     """Return a JSON-able status payload for the /status endpoint.
 
@@ -89,11 +103,11 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
     now = pool._clock()
     quota_snap = pool.quota.snapshot()
     metrics_snap = pool.metrics.snapshot()
+    cooldown_snap = pool.cooldown_snapshot(now)  # locked read; no torn cooldown state
 
     providers_list = []
     for p in pool.providers:
-        cooldown_until = pool._cooldown_until.get(p.id, 0.0)
-        cooldown_remaining = max(0.0, cooldown_until - now)
+        cooldown_remaining = cooldown_snap.get(p.id, 0.0)
 
         models_list = []
         for m in p.models:
@@ -124,8 +138,9 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
             }
         )
 
-    s = pool.stats
+    s = pool.stats_snapshot()
     saved = usd_saved(s.get("prompt_tokens", 0), s.get("completion_tokens", 0))
+    life = pool.lifetime_stats()
 
     return {
         "routing": pool.routing,
@@ -135,6 +150,15 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
             "completion_tokens": s.get("completion_tokens", 0),
             "cache_hits": s.get("cache_hits", 0),
             "usd_saved": saved,
+        },
+        # lifetime (persisted across restarts) — the growing "served free" number
+        "lifetime": {
+            "requests": life.get("requests", 0),
+            "prompt_tokens": life.get("prompt_tokens", 0),
+            "completion_tokens": life.get("completion_tokens", 0),
+            "cache_hits": life.get("cache_hits", 0),
+            "usd_saved": usd_saved(life.get("prompt_tokens", 0), life.get("completion_tokens", 0)),
+            "first_seen": life.get("first_seen"),
         },
         "providers": providers_list,
         "recent": list(recent),
@@ -237,6 +261,35 @@ def make_handler(pool: Pool, api_key: str | None = None):
             path = urlsplit(self.path).path.rstrip("/") or "/"
             if path == "/healthz":
                 self._send(200, {"status": "ok"})
+                return
+            # Shareable SVG badge/card of lifetime "served free" totals. Embeddable
+            # (e.g. in a README) only when FREELLMPOOL_PUBLIC_BADGE is set, so a
+            # key-locked proxy stays locked by default; otherwise auth like the rest.
+            if path in ("/badge.svg", "/summary.svg"):
+                public = os.environ.get("FREELLMPOOL_PUBLIC_BADGE", "").strip().lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                )
+                if not public and not self._authorized():
+                    self._error(401, "invalid or missing API key", "invalid_api_key")
+                    return
+                from . import svg as _svg
+
+                life = pool.lifetime_stats()
+                if path == "/summary.svg":
+                    body = _svg.summary_svg(life, _provider_leaderboard(pool))
+                else:
+                    metric = parse_qs(urlsplit(self.path).query).get("metric", ["tokens"])[0]
+                    body = _svg.badge_svg(life, metric=metric)
+                data = body.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+                self.send_header("Cache-Control", "max-age=300")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             # /dashboard and /v1/models leak inventory/usage, so gate them behind
             # the proxy key when one is configured.
@@ -633,10 +686,17 @@ def _normalize_messages(messages: list) -> list[dict]:
     return out
 
 
+def _header_safe(value: object) -> str:
+    """Strip control chars (CR/LF/...) so a provider/model name can never inject a
+    response header. Catalog validation already rejects these at load; this is
+    defense-in-depth for any value reaching an HTTP header."""
+    return re.sub(r"[\x00-\x1f\x7f]", "", str(value))
+
+
 def _obs_headers(reply) -> dict:
     return {
-        "X-Freellmpool-Provider": reply.provider_id,
-        "X-Freellmpool-Model": reply.model,
+        "X-Freellmpool-Provider": _header_safe(reply.provider_id),
+        "X-Freellmpool-Model": _header_safe(reply.model),
         "X-Freellmpool-Attempts": reply.attempts,
     }
 
@@ -686,7 +746,7 @@ def _dashboard_html(pool) -> str:
     from .key_inventory import load_inventory
     from .savings import usd_saved
 
-    s = pool.stats
+    s = pool.stats_snapshot()
     saved = usd_saved(s.get("prompt_tokens"), s.get("completion_tokens"))
     snap = pool.quota.snapshot()
     by_provider: dict[str, int] = {}

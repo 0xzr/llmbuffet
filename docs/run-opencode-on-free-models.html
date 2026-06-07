@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run OpenCode on free LLM models (no API bill) — with a live in-editor dashboard</title>
+<meta name="description" content="Run the OpenCode coding agent on free LLM tiers with freellmpool — a local OpenAI-compatible proxy that pools 16 free providers. Includes an embedded TUI dashboard, per-request quality routing, and usage tools. Keyless to start.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/run-opencode-on-free-models.html">
+<meta property="og:title" content="Run OpenCode on free LLM models — with a live dashboard">
+<meta property="og:description" content="Point OpenCode at one local proxy and code on pooled free LLM tiers — with an embedded dashboard, quality routing, and usage tools. Keyless to start.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}
+ body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}
+ h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}
+ h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}
+ a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+ pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}
+ code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}
+ pre code{background:none;padding:0}
+ .lead{font-size:17px}
+ .note{background:var(--card);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:6px;padding:10px 14px;font-size:14px;margin:14px 0}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/run-opencode-on-free-models.html">
+<meta name="twitter:card" content="summary">
+</head>
+<body>
+<div class="wrap">
+
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › guide</p>
+<h1>How to run OpenCode on free LLM models</h1>
+
+<p class="lead"><strong>You can run the <a href="https://opencode.ai">OpenCode</a> coding agent on
+free LLM tiers — no API bill — by pointing it at a local proxy that speaks the OpenAI API. The
+open-source tool <a href="https://github.com/0xzr/freellmpool">freellmpool</a> is that proxy: it pools
+the free tiers of 16 providers (Groq, Cerebras, NVIDIA, Gemini, OpenRouter, Cloudflare, Mistral, Cohere
+and more) behind one endpoint, with automatic failover. Two providers need no API key, so you can start
+for free in under a minute. It also ships an OpenCode plugin with a <strong>live dashboard, quality
+routing, and usage tools</strong> built in.</strong></p>
+
+<h2>1. Install and start the proxy</h2>
+<pre><code>pip install freellmpool
+freellmpool proxy            # serves http://localhost:8080</code></pre>
+<p>The proxy now routes OpenAI-style requests to a free provider and fails over when one is
+rate-limited.</p>
+
+<h2>2. Add freellmpool as an OpenCode provider</h2>
+<p>In your <code>opencode.json</code> (or <code>~/.config/opencode/opencode.jsonc</code>), add a
+freellmpool provider and set it as your model. The routing aliases let you pick how each prompt is
+routed:</p>
+<pre><code>{
+  "model": "freellmpool/auto",
+  "provider": {
+    "freellmpool": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://localhost:8080/v1" },
+      "models": {
+        "auto": {}, "fast": {}, "quality": {}, "fair": {}
+      }
+    }
+  }
+}</code></pre>
+<p>Run <code>freellmpool code opencode</code> to print these steps any time.</p>
+
+<h2>3. Control routing quality from the model picker</h2>
+<p>Switch the model in OpenCode's picker to choose how freellmpool routes — no extra config:</p>
+<ul>
+<li><code>freellmpool/auto</code> — the proxy's default routing.</li>
+<li><code>freellmpool/quality</code> — match each prompt's difficulty to the best <em>and fastest</em>
+capable free model (benchmark-scored, latency-aware).</li>
+<li><code>freellmpool/fast</code> — lowest-latency provider first.</li>
+<li><code>freellmpool/fair</code> — spread load across providers to preserve daily quota.</li>
+</ul>
+
+<h2>4. The embedded dashboard (optional, but fun)</h2>
+<p>freellmpool ships a native OpenCode TUI plugin that renders a live panel <em>inside</em> the editor —
+the active routing mode, estimated money saved, tokens served free, a provider "race," a latency
+sparkline, and which provider/model just answered. It updates as you code. Setup is in the
+<a href="https://github.com/0xzr/freellmpool/tree/main/integrations/opencode-tui">integrations/opencode-tui</a>
+folder; a companion server plugin adds <code>freellmpool_status</code> and <code>freellmpool_models</code>
+tools you can ask for in any session.</p>
+
+<div class="note">Free-tier models are smaller than frontier models. They're great for scaffolding,
+refactors, tests, commit messages, and everyday edits — not a substitute for a frontier model on the
+hardest reasoning. Limits reset at UTC midnight; <code>freellmpool/quality</code> keeps effective quality
+high as caps fill.</div>
+
+<h2>5. (Optional) add free keys for more capacity</h2>
+<p>The keyless providers get you started; adding free API keys for Groq, Cerebras, Gemini and others
+unlocks more models and higher daily limits — see the
+<a href="https://github.com/0xzr/freellmpool/blob/main/docs/ACCOUNTS.md">accounts guide</a>. freellmpool
+spreads load across whatever you have and tracks per-day usage so each tier drains evenly. Track your
+running total with <code>freellmpool stats</code> or embed a <code>freellmpool badge</code> in your README.</p>
+
+<h2>FAQ</h2>
+<h3>Can I really use OpenCode for free?</h3>
+<p>Yes. freellmpool's proxy implements the OpenAI Chat Completions API and routes it to free-tier models,
+so OpenCode runs against them with no code changes. Quality is bounded by the free-tier models you have
+access to; <code>freellmpool/quality</code> routing picks the strongest fast-enough one per prompt.</p>
+<h3>Does freellmpool work with OpenCode's tool calls?</h3>
+<p>Yes — the proxy preserves tool/function calls across providers, and the bundled plugin adds extra
+tools (status, model list) plus the in-editor dashboard.</p>
+<h3>Is this against OpenCode's terms?</h3>
+<p>No — you're pointing OpenCode at a custom OpenAI-compatible provider, exactly the mechanism it supports
+for local and custom models. You're using the LLM providers' own free tiers; don't abuse them.</p>
+<h3>How do I see which free model OpenCode is using?</h3>
+<p>The embedded dashboard shows the last-served provider/model live; or ask the agent to run the
+<code>freellmpool_status</code> tool, or curl the proxy's <code>/status</code> endpoint.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open
+source). Updated 2026-06-07.</p>
+
+</div>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "How to run OpenCode on free LLM models", "item": "https://0xzr.github.io/freellmpool/run-opencode-on-free-models.html"}]}</script>
+</body>
+</html>

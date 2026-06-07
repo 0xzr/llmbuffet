@@ -100,7 +100,11 @@ def _client():
                     limits=httpx.Limits(
                         max_keepalive_connections=20, max_connections=100, keepalive_expiry=30.0
                     ),
-                    follow_redirects=True,
+                    # Don't follow redirects: a validated public base_url could 3xx to
+                    # a loopback/internal host and we'd resend the provider API key to
+                    # the redirect target (SSRF / key exfil). Chat APIs don't redirect;
+                    # a 3xx is treated as a failed attempt and fails over.
+                    follow_redirects=False,
                 )
                 atexit.register(_shared.close)
     return _shared

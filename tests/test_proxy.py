@@ -532,3 +532,66 @@ def _post_json_with_headers(url, payload, headers):
     )
     with urllib.request.urlopen(req) as resp:  # noqa: S310 (localhost test)
         return resp.status, json.load(resp)
+
+
+# ---- shareable SVG badge / summary + lifetime stats ----
+
+
+def test_badge_svg_route(server):
+    with urllib.request.urlopen(server + "/badge.svg") as resp:  # noqa: S310
+        assert resp.status == 200
+        assert resp.headers.get("Content-Type", "").startswith("image/svg+xml")
+        body = resp.read().decode()
+    assert body.startswith("<svg")
+    assert "freellmpool" in body
+
+
+def test_summary_svg_route(server):
+    with urllib.request.urlopen(server + "/summary.svg") as resp:  # noqa: S310
+        assert resp.status == 200
+        body = resp.read().decode()
+    assert "<svg" in body
+
+
+def test_status_has_lifetime_block(server):
+    status, body = _get_json(server + "/status")
+    assert status == 200
+    assert "lifetime" in body
+    for k in (
+        "requests",
+        "prompt_tokens",
+        "completion_tokens",
+        "cache_hits",
+        "usd_saved",
+        "first_seen",
+    ):
+        assert k in body["lifetime"]
+
+
+def test_badge_requires_auth_when_keyed(providers, env, quota, monkeypatch):
+    monkeypatch.delenv("FREELLMPOOL_PUBLIC_BADGE", raising=False)
+    pool = Pool(
+        providers, quota=quota, env=env, post=make_post({}), stream_post=make_stream_post({})
+    )
+    httpd, base = _serve(pool, api_key="secret")
+    try:
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(base + "/badge.svg")  # noqa: S310
+        assert exc.value.code == 401
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_badge_public_when_opted_in(providers, env, quota, monkeypatch):
+    monkeypatch.setenv("FREELLMPOOL_PUBLIC_BADGE", "1")
+    pool = Pool(
+        providers, quota=quota, env=env, post=make_post({}), stream_post=make_stream_post({})
+    )
+    httpd, base = _serve(pool, api_key="secret")
+    try:
+        with urllib.request.urlopen(base + "/badge.svg") as resp:  # noqa: S310
+            assert resp.status == 200  # public despite the proxy key
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

@@ -54,6 +54,12 @@ claude
 Your existing OpenAI/Anthropic apps work the same way — set `OPENAI_BASE_URL` (or
 `ANTHROPIC_BASE_URL`) to the proxy and keep your code unchanged.
 
+**OpenCode** gets a deeper integration: a live in-editor **dashboard** (routing mode,
+$ saved, tokens served free, provider race, latency), per-request **quality routing**
+via the model picker (`freellmpool/auto|fast|quality|fair`), and `freellmpool_status`
+/ `freellmpool_models` tools — see [integrations/opencode-tui](integrations/opencode-tui)
+and the [guide](https://0xzr.github.io/freellmpool/run-opencode-on-free-models.html).
+
 **New in 0.11:** capacity tools — `freellmpool capacity status` shows which free
 tiers are usable right now, `freellmpool providers health` live-probes them, and
 `freellmpool keys add` walks you through configuring more (see
@@ -79,7 +85,13 @@ freellmpool ask "Write a haiku about sqlite"
 git diff | freellmpool ask "Write a commit message for this"
 freellmpool providers        # which providers are configured
 freellmpool models           # every provider/model id
+freellmpool stats            # lifetime tokens served free + avoided cost
+freellmpool badge -o badge.svg   # a shareable SVG badge of that total
 ```
+
+`freellmpool stats` is a running, **persistent** lifetime total (it survives restarts
+and upgrades). Embed `freellmpool badge` in a README, or serve it live from the proxy
+at `/badge.svg` (set `FREELLMPOOL_PUBLIC_BADGE=1` to make it publicly embeddable).
 
 Pin a provider or model; common OpenAI/Anthropic model names are mapped to a free
 equivalent so existing scripts keep working:
