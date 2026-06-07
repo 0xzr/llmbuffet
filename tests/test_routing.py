@@ -163,6 +163,39 @@ def test_quality_over_budget_model_sinks(tmp_path, monkeypatch, quota):
     assert order[-1] == "big"  # still reachable, just last
 
 
+def test_quality_latency_breaks_capability_near_tie(tmp_path, monkeypatch, quota):
+    # Both models clear a hard prompt's bar. "slowbig" is the closest capability fit
+    # (it would win on capability alone) but is painfully slow; "fastbig" is snappy.
+    # Latency-aware quality must avoid the slow giant.
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"slowbig": 0.90, "fastbig": 0.95},
+        models=[Model("slowbig"), Model("fastbig")],
+    )
+    pool.metrics.record_success("x/slowbig", 30000.0)  # 30s
+    pool.metrics.record_success("x/fastbig", 700.0)  # 0.7s
+    order = [t.model for t in pool._order(pool._all_targets(), difficulty=0.90)]
+    assert order[0] == "fastbig"  # capability-fit alone would put slowbig first
+
+
+def test_quality_latency_never_overrides_capability_bar(tmp_path, monkeypatch, quota):
+    # A fast but under-powered model must NOT leapfrog a capable one on a hard prompt:
+    # the latency term is bounded below the under-power penalty.
+    pool = _quality_pool(
+        tmp_path,
+        monkeypatch,
+        quota,
+        scores={"weakfast": 0.30, "strongslow": 0.95},
+        models=[Model("weakfast"), Model("strongslow")],
+    )
+    pool.metrics.record_success("x/weakfast", 200.0)  # blazing
+    pool.metrics.record_success("x/strongslow", 30000.0)  # slow
+    order = [t.model for t in pool._order(pool._all_targets(), difficulty=0.90)]
+    assert order[0] == "strongslow"  # hard prompt still gets the capable model
+
+
 def test_quality_failing_model_sinks(tmp_path, monkeypatch, quota):
     pool = _quality_pool(
         tmp_path,

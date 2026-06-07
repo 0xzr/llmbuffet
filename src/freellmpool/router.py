@@ -44,6 +44,14 @@ _MIN_LEARNABLE_CONTEXT = 256
 # Learned limits expire so a transient/edge provider error can't park a model for
 # the whole process lifetime (providers drift; some report per-request limits).
 _CTX_LIMIT_TTL = 1800.0  # seconds (30 min)
+# Quality-routing latency tuning. A target whose smoothed latency reaches
+# _QUALITY_SLOW_S counts as fully slow (penalty 1.0); interactive coding wants
+# sub-handful-of-seconds, so 8s is "slow". An unmeasured target gets a neutral mid
+# penalty (~2.7s-equivalent) so it is still sampled but loses to a proven-fast model.
+# Both stay well under the capability under-power penalty (>=5), so latency only
+# breaks ties among models that already clear the difficulty bar.
+_QUALITY_SLOW_S = 8.0
+_QUALITY_UNKNOWN_LAT = 0.34
 
 
 def _is_health_failure(exc: Exception) -> bool:
@@ -322,14 +330,29 @@ class Pool:
         if mode == "quality":
             table = capability_table()
             need = difficulty if difficulty is not None else 0.5
+            msnap = metrics.snapshot()  # one locked read for failing + latency
+
+            def lat_pen(t: Target) -> float:
+                # Latency penalty in [0,1]: a measured target's smoothed latency
+                # scaled so anything >= _QUALITY_SLOW_S counts as fully slow; an
+                # unmeasured one gets a neutral mid value so it is still sampled.
+                # Because the capability under-power penalty is >=5 for any model
+                # below the difficulty bar, this term only re-orders models that
+                # *already clear* the bar — so quality stops parking on a giant that
+                # takes tens of seconds when a comparably-capable model answers in ~1s.
+                st = msnap.get(t.name)
+                if st is None or st.ewma_ms is None:
+                    return _QUALITY_UNKNOWN_LAT
+                return min(st.ewma_ms / 1000.0, _QUALITY_SLOW_S) / _QUALITY_SLOW_S
 
             def quality_key(t: Target) -> tuple[int, int, float, int]:
                 # over-budget, then known-failing sink to the back (still reachable);
-                # then best capability-fit; then least-used as a fairness tiebreak.
+                # then capability-fit blended with latency; then least-used.
+                st = msnap.get(t.name)
                 return (
                     over_of(t),
-                    1 if metrics.failing(t.name) else 0,
-                    fit_penalty(model_capability(t.model, table), need),
+                    1 if (st and st.failing) else 0,
+                    fit_penalty(model_capability(t.model, table), need) + lat_pen(t),
                     used_of(t),
                 )
 
