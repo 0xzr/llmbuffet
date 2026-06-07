@@ -83,11 +83,18 @@ Only dependency is `httpx`. Python 3.11+.
 ```bash
 freellmpool ask "Write a haiku about sqlite"
 git diff | freellmpool ask "Write a commit message for this"
+freellmpool tokenmax "Hardest question you've got"  # 🌈 blast EVERY model, synthesize the swarm
 freellmpool providers        # which providers are configured
 freellmpool models           # every provider/model id
 freellmpool stats            # lifetime tokens served free + avoided cost
 freellmpool badge -o badge.svg   # a shareable SVG badge of that total
 ```
+
+`freellmpool tokenmax` is the tongue-in-cheek maximum-effort mode: it fans your
+prompt out to **every model across every provider** at once, prints each answer, and
+synthesizes one best verdict — flashing a rainbow `TOKENMAXXING` animation in your
+terminal while it runs. (Also available as the `tokenmax` MCP tool — see
+[docs/MCP.md](docs/MCP.md).)
 
 `freellmpool stats` is a running, **persistent** lifetime total (it survives restarts
 and upgrades). Embed `freellmpool badge` in a README, or serve it live from the proxy

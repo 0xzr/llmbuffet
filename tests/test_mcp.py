@@ -113,9 +113,9 @@ def test_tools_call_tokenmax(providers, env, quota):
 
 
 def test_tokenmax_default_respects_hard_cap(providers, env, quota, monkeypatch):
-    import freellmpool.mcp_server as M
+    import freellmpool.tokenmax as TM
 
-    monkeypatch.setattr(M, "_TOKENMAX_HARD_CAP", 2)  # even "all" must obey the ceiling
+    monkeypatch.setattr(TM, "HARD_CAP", 2)  # even "all" must obey the ceiling
     pool = _pool(providers, env, quota)
     resp = handle_message(
         pool,
@@ -127,6 +127,64 @@ def test_tokenmax_default_respects_hard_cap(providers, env, quota, monkeypatch):
         },
     )
     assert "to 2 models" in resp["result"]["content"][0]["text"]
+
+
+def test_tokenmax_result_has_rainbow_banner(providers, env, quota):
+    from freellmpool.tokenmax import RAINBOW_BANNER
+
+    pool = _pool(providers, env, quota)
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "tools/call",
+            "params": {"name": "tokenmax", "arguments": {"prompt": "hi"}},
+        },
+    )
+    assert RAINBOW_BANNER in resp["result"]["content"][0]["text"]  # color lands in every host
+
+
+def test_tokenmax_emits_progress_when_token_present(providers, env, quota):
+    pool = _pool(providers, env, quota)
+    sent: list = []
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 16,
+            "method": "tools/call",
+            "params": {
+                "name": "tokenmax",
+                "arguments": {"prompt": "hi"},
+                "_meta": {"progressToken": "tok-1"},
+            },
+        },
+        send_notification=sent.append,
+    )
+    assert resp["result"]["isError"] is False
+    progs = [m for m in sent if m.get("method") == "notifications/progress"]
+    assert progs, "expected progress notifications when a progressToken is supplied"
+    last = progs[-1]["params"]
+    assert last["progressToken"] == "tok-1"
+    assert last["progress"] == last["total"]  # the final tick reaches 100%
+    assert "TOKENMAXXING" in last["message"]
+
+
+def test_tokenmax_silent_without_progress_token(providers, env, quota):
+    pool = _pool(providers, env, quota)
+    sent: list = []
+    handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "tools/call",
+            "params": {"name": "tokenmax", "arguments": {"prompt": "hi"}},  # no _meta
+        },
+        send_notification=sent.append,
+    )
+    assert not [m for m in sent if m.get("method") == "notifications/progress"]
 
 
 def test_tools_call_route_is_zero_token(providers, env, quota):

@@ -1,6 +1,7 @@
 """Command-line interface for freellmpool.
 
 freellmpool ask "question"        one-shot completion (reads stdin too)
+freellmpool tokenmax "question"   🌈 blast every model, synthesize the swarm
 freellmpool providers            list configured / available providers
 freellmpool quota                show today's per-provider usage
 freellmpool proxy                run the OpenAI-compatible proxy server
@@ -80,6 +81,70 @@ def cmd_ask(args: argparse.Namespace) -> int:
             f"\n[served by {reply.provider_id}/{reply.model} · {saved}]",
             file=sys.stderr,
         )
+    return 0
+
+
+def cmd_tokenmax(args: argparse.Namespace) -> int:
+    """🌈 Blast one prompt to EVERY model across EVERY provider, then (by default)
+    synthesize the swarm into one answer. The genuine rainbow animation runs on a
+    real terminal."""
+    from .tokenmax import RAINBOW_BANNER, RainbowThrob, fan_out, select_targets
+
+    stdin = _read_stdin()
+    prompt = args.prompt or ""
+    if stdin:
+        prompt = f"{stdin}\n\n{prompt}".strip() if prompt else stdin
+    if not prompt.strip():
+        print("freellmpool: no prompt provided (pass text or pipe stdin)", file=sys.stderr)
+        return 3
+
+    pool = Pool.from_default_config()
+    if not pool.providers:
+        print(
+            "freellmpool: no providers configured; set at least one API key "
+            "(see .env.example) before tokenmaxxing.",
+            file=sys.stderr,
+        )
+        return 3
+
+    msgs: list[dict[str, str]] = []
+    if args.system:
+        msgs.append({"role": "system", "content": args.system})
+    msgs.append({"role": "user", "content": prompt})
+
+    picks, n_providers = select_targets(pool, msgs, args.max_models)
+    if not picks:
+        print("freellmpool: no models available to blast", file=sys.stderr)
+        return 3
+
+    label = f"TOKENMAXXING {len(picks)} models across {n_providers} providers"
+    with RainbowThrob(label):
+        answered, failed = fan_out(pool, msgs, picks, max_tokens=args.max_tokens)
+
+    print(
+        f"{RAINBOW_BANNER} TOKENMAX — {len(picks)} models / {n_providers} providers · "
+        f"{len(answered)} answered, {len(failed)} unavailable {RAINBOW_BANNER}\n"
+    )
+    for lbl, text in answered:
+        print(f"### {lbl}\n{text}\n")
+    if failed:
+        shown = ", ".join(failed[:30]) + ("…" if len(failed) > 30 else "")
+        print(f"({len(failed)} unavailable: {shown})\n", file=sys.stderr)
+
+    if not args.no_synthesize and answered:
+        blob = "\n\n".join(f"[{lbl}]\n{txt}" for lbl, txt in answered)
+        syn_prompt = (
+            "Below are many models' answers to the same question. Synthesize the single "
+            "best, correct, concise answer, weighing agreement and discarding outliers.\n\n"
+            f"Question: {prompt}\n\n{blob}"
+        )
+        try:
+            syn = pool.chat(
+                [{"role": "user", "content": syn_prompt}], routing="quality", max_tokens=1024
+            )
+            print(f"{RAINBOW_BANNER} SYNTHESIS — via {syn.provider_id}/{syn.model}\n{syn.text}")
+        except Exception as exc:  # noqa: BLE001 — synthesis is a bonus, never fatal
+            print(f"(synthesis failed: {type(exc).__name__}: {exc})", file=sys.stderr)
     return 0
 
 
@@ -740,6 +805,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ask.add_argument("-v", "--verbose", action="store_true", help="report which provider served")
     p_ask.set_defaults(func=cmd_ask)
+
+    p_tokenmax = sub.add_parser(
+        "tokenmax",
+        help="🌈 blast a prompt to EVERY model across EVERY provider, then synthesize",
+    )
+    p_tokenmax.add_argument("prompt", nargs="?", default="", help="prompt text (stdin is appended)")
+    p_tokenmax.add_argument("-s", "--system", help="system prompt")
+    p_tokenmax.add_argument(
+        "--max-models", type=int, default=None, help="cap how many models to hit (default: ALL)"
+    )
+    p_tokenmax.add_argument(
+        "--max-tokens", type=int, default=400, help="max output tokens per model"
+    )
+    p_tokenmax.add_argument(
+        "--no-synthesize",
+        action="store_true",
+        help="just dump every answer; skip the synthesized verdict",
+    )
+    p_tokenmax.set_defaults(func=cmd_tokenmax)
 
     p_prov = sub.add_parser("providers", help="list providers and configuration status")
     prov_sub = p_prov.add_subparsers(dest="providers_command")

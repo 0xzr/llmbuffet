@@ -26,7 +26,6 @@ Implemented on the standard library only — no MCP SDK required.
 from __future__ import annotations
 
 import concurrent.futures as _cf
-import itertools
 import json
 import sys
 import threading
@@ -34,14 +33,11 @@ import time
 
 from .config import resolve_alias
 from .router import Pool
+from .tokenmax import HARD_CAP, RAINBOW_BANNER, RainbowThrob, fan_out, select_targets
 
 _DEFAULT_PROTOCOL = "2025-06-18"
 _ROUTING_MODES = ("fair", "fast", "quality", "legacy", "model", "model-fast")
 _MAX_PANEL = 5
-# tokenmax fans out to EVERY model by default (the whole point). A high hard ceiling
-# only stops a pathological catalog from spawning thousands; workers stay bounded.
-_TOKENMAX_HARD_CAP = 256
-_TOKENMAX_WORKERS = 32
 
 TOOLS = [
     {
@@ -126,7 +122,7 @@ TOOLS = [
                 "system": {"type": "string", "description": "Optional system instruction."},
                 "max_models": {
                     "type": "integer",
-                    "description": f"Optional cap on how many models to hit (default: ALL of them; hard max {_TOKENMAX_HARD_CAP}).",
+                    "description": f"Optional cap on how many models to hit (default: ALL of them; hard max {HARD_CAP}).",
                 },
                 "max_tokens": {
                     "type": "integer",
@@ -229,7 +225,7 @@ def _resolve_model(model, env) -> tuple[list[str] | None, str | None]:
     return None, model
 
 
-def _call_tool(pool: Pool, params: dict) -> dict:
+def _call_tool(pool: Pool, params: dict, notify=None) -> dict:
     name = params.get("name")
     args = params.get("arguments") or {}
     if name == "free_llm_ask":
@@ -237,7 +233,7 @@ def _call_tool(pool: Pool, params: dict) -> dict:
     if name == "free_llm_panel":
         return _tool_panel(pool, args)
     if name == "tokenmax":
-        return _tool_tokenmax(pool, args)
+        return _tool_tokenmax(pool, args, notify=notify)
     if name == "free_llm_route":
         return _tool_route(pool, args)
     if name == "free_llm_models":
@@ -336,90 +332,29 @@ def _tool_panel(pool: Pool, args: dict) -> dict:
     return _text("\n".join(out))
 
 
-class _RainbowThrob:
-    """Tongue-in-cheek: pulse a rainbow 'TOKENMAXXING' banner while a long fan-out
-    runs, so the harness shows it working. Writes to STDERR only — never stdout,
-    which is the JSON-RPC channel. On a real TTY it animates in place; piped (the
-    usual MCP-client case) it prints one plain start line + a done line, so logs
-    don't fill with escape codes."""
-
-    _COLORS = (196, 208, 226, 46, 51, 21, 201)  # ANSI-256 rainbow
-    _PULSE = "▁▂▃▄▅▆▇█▇▆▅▄▃▂"
-
-    def __init__(self, label: str):
-        self.label = label
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._tty = bool(getattr(sys.stderr, "isatty", lambda: False)())
-
-    def __enter__(self) -> _RainbowThrob:
-        if self._tty:
-            self._thread = threading.Thread(target=self._run, daemon=True)
-            self._thread.start()
-        else:
-            sys.stderr.write(f"🌈 {self.label} …\n")
-            sys.stderr.flush()
-        return self
-
-    def _run(self) -> None:
-        for i in itertools.count():
-            if self._stop.wait(0.1):
-                break
-            c = self._COLORS[i % len(self._COLORS)]
-            p = self._PULSE[i % len(self._PULSE)]
-            sys.stderr.write(f"\r\033[38;5;{c}m{p} 🌈 {self.label} {p}\033[0m\033[K")
-            sys.stderr.flush()
-
-    def __exit__(self, *exc) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-            sys.stderr.write("\r\033[K")  # clear the animated line
-            sys.stderr.flush()
-        elif not self._tty:
-            sys.stderr.write(f"🌈 {self.label} — done\n")
-            sys.stderr.flush()
-
-
-def _tool_tokenmax(pool: Pool, args: dict) -> dict:
+def _tool_tokenmax(pool: Pool, args: dict, notify=None) -> dict:
     prompt = args.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         return _text("'prompt' is required", is_error=True)
     max_tokens = _max_tokens(args.get("max_tokens"), 350)
     msgs = _messages(args.get("system"), prompt)
-    # EVERY model across EVERY configured provider — round-robin interleaved so the swarm
-    # spans all providers (best-first within each) instead of pounding one provider's list.
-    by_provider: dict[str, list] = {}
-    for t in pool.rank_targets(msgs):
-        by_provider.setdefault(t.provider.id, []).append(t)
-    interleaved = [t for tier in itertools.zip_longest(*by_provider.values()) for t in tier if t]
-    # Default: ALL of them (the whole point), but never above the hard ceiling — that
-    # guards against a pathological catalog even on the default path. max_models only lowers it.
-    default_limit = min(len(interleaved), _TOKENMAX_HARD_CAP)
-    limit = _clamp_int(args.get("max_models"), default_limit, 1, _TOKENMAX_HARD_CAP)
-    picks = interleaved[:limit]
+    picks, n_providers = select_targets(pool, msgs, args.get("max_models"))
     if not picks:
         return _text("no providers configured", is_error=True)
-    n_providers = len({t.provider.id for t in picks})  # providers actually hit, not pool size
 
-    def ask_one(t):
-        try:
-            r = pool.chat(msgs, model=t.model, providers=[t.provider.id], max_tokens=max_tokens)
-            return (f"{r.provider_id}/{r.model}", r.text, None)
-        except Exception as exc:  # noqa: BLE001
-            return (f"{t.provider.id}/{t.model}", None, f"{type(exc).__name__}: {exc}")
+    # Live progress for hosts that support it (Claude Code shows the message ticking
+    # up). Raw ANSI can't animate inside an MCP chat, so this is the "it's alive" signal.
+    def progress(done: int, total: int, _label: str) -> None:
+        if notify is not None:
+            notify(done, total, f"🌈 TOKENMAXXING ▸ {done}/{total} models")
 
-    with (
-        _RainbowThrob(f"TOKENMAXXING {len(picks)} models across {n_providers} providers"),
-        _cf.ThreadPoolExecutor(max_workers=min(_TOKENMAX_WORKERS, len(picks))) as ex,
-    ):
-        results = list(ex.map(ask_one, picks))
+    with RainbowThrob(f"TOKENMAXXING {len(picks)} models across {n_providers} providers"):
+        answered, failed = fan_out(pool, msgs, picks, max_tokens=max_tokens, progress=progress)
 
-    answered = [(lbl, txt) for lbl, txt, err in results if not err]
-    failed = [lbl for lbl, _txt, err in results if err]
     head = [
-        f"🌈 TOKENMAX — blasted your prompt to {len(picks)} models across "
-        f"{n_providers} providers; {len(answered)} answered, {len(failed)} unavailable.",
+        f"{RAINBOW_BANNER} TOKENMAX — blasted your prompt to {len(picks)} models across "
+        f"{n_providers} providers; {len(answered)} answered, {len(failed)} unavailable. "
+        f"{RAINBOW_BANNER}",
         "Synthesize the single best, correct answer from every response below "
         "(weigh agreement, discard outliers):",
         "",
@@ -510,9 +445,40 @@ def _lifetime_summary(pool: Pool) -> str:
     return "\n".join(lines)
 
 
-def handle_message(pool: Pool, msg: dict, *, version: str = "0.0.0") -> dict | None:
+def _make_notify(params: dict, send_notification):
+    """Build a progress callback that emits MCP `notifications/progress`, but only
+    when the client supplied a progressToken (per the MCP spec) and we have a
+    channel to send on. Otherwise return None so the tool runs silently."""
+    if send_notification is None:
+        return None
+    token = (params.get("_meta") or {}).get("progressToken")
+    if token is None:
+        return None
+
+    def notify(progress: int, total: int, message: str) -> None:
+        send_notification(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {
+                    "progressToken": token,
+                    "progress": progress,
+                    "total": total,
+                    "message": message,
+                },
+            }
+        )
+
+    return notify
+
+
+def handle_message(
+    pool: Pool, msg: dict, *, version: str = "0.0.0", send_notification=None
+) -> dict | None:
     """Handle one JSON-RPC message. Returns a response dict, or None for
-    notifications (which get no reply)."""
+    notifications (which get no reply). `send_notification`, if given, is a
+    callback the server can use to emit out-of-band notifications (e.g. progress)
+    while a tool is still running."""
     if not isinstance(msg, dict):
         return _error(None, -32600, "invalid request: not a JSON-RPC object")
     if "method" not in msg or not isinstance(msg["method"], str):
@@ -540,7 +506,9 @@ def handle_message(pool: Pool, msg: dict, *, version: str = "0.0.0") -> dict | N
         if method == "tools/list":
             return _result(mid, {"tools": TOOLS})
         if method == "tools/call":
-            return _result(mid, _call_tool(pool, msg.get("params") or {}))
+            params = msg.get("params") or {}
+            notify = _make_notify(params, send_notification)
+            return _result(mid, _call_tool(pool, params, notify=notify))
         return _error(mid, -32601, f"method not found: {method}")
     except Exception as exc:  # noqa: BLE001 — never crash the loop
         return _error(mid, -32603, f"{type(exc).__name__}: {exc}")
@@ -549,11 +517,31 @@ def handle_message(pool: Pool, msg: dict, *, version: str = "0.0.0") -> dict | N
 def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
     """Run the MCP server over stdio until stdin closes."""
     out = sys.stdout
+    # A lock guards every write so progress notifications emitted from tokenmax's
+    # worker threads can't interleave mid-line with the final response.
+    #
+    # Deadlock-safety invariant: the lock is only ever held for the duration of a
+    # single write_obj() call. handle_message() (which runs the tool's fan-out and
+    # all of its worker-thread progress notifications) is fully evaluated BEFORE
+    # emit()/write_obj() acquires the lock — so the main thread never holds the lock
+    # while workers are trying to acquire it. Do not move write_obj() to wrap a
+    # handle_message() call, or the workers' notifications would deadlock.
+    write_lock = threading.Lock()
+
+    def write_obj(obj) -> None:
+        with write_lock:
+            out.write(json.dumps(obj) + "\n")
+            out.flush()
 
     def emit(resp) -> None:
         if resp is not None:
-            out.write(json.dumps(resp) + "\n")
-            out.flush()
+            write_obj(resp)
+
+    def send_notification(obj) -> None:
+        try:  # best-effort; a failed progress ping must never abort the tool
+            write_obj(obj)
+        except Exception:  # noqa: BLE001
+            pass
 
     for line in sys.stdin:
         line = line.strip()
@@ -568,11 +556,17 @@ def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
             if not msg:
                 emit(_error(None, -32600, "invalid request: empty batch"))
                 continue
-            responses = [r for r in (handle_message(pool, m, version=version) for m in msg) if r]
+            responses = [
+                r
+                for r in (
+                    handle_message(pool, m, version=version, send_notification=send_notification)
+                    for m in msg
+                )
+                if r
+            ]
             # JSON-RPC 2.0: a batch gets a single response that is an array of the
             # individual responses (omitting notifications). All-notifications → no reply.
             if responses:
-                out.write(json.dumps(responses) + "\n")
-                out.flush()
+                write_obj(responses)
             continue
-        emit(handle_message(pool, msg, version=version))
+        emit(handle_message(pool, msg, version=version, send_notification=send_notification))

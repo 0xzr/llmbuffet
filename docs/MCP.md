@@ -14,7 +14,7 @@ and it works (keyless providers). Add keys to unlock more.
 |---|---|
 | `free_llm_ask` | Ask a free model (`prompt`, optional `system` / `model` / `provider` / `routing` / `max_tokens`). The reply names the serving model. |
 | `free_llm_panel` | Ask the **same** prompt to N different free models at once and compare — a free second opinion / ensemble. Optional `synthesize` merges them into one best answer. |
-| `tokenmax` | 🌈 Gloriously excessive: blast the prompt to a big swarm of free models, then the **calling** model synthesizes them all. Tongue-in-cheek, genuinely useful for hard questions (throbs a rainbow `TOKENMAXXING` banner while it runs). |
+| `tokenmax` | 🌈 Gloriously excessive: blast the prompt to **every** free model across **every** provider at once, then the **calling** model synthesizes them all. Emits live `notifications/progress` (`🌈 TOKENMAXXING ▸ 47/168 models…`) so hosts like Claude Code show it ticking up, and a colorful rainbow banner in the result. Tongue-in-cheek, genuinely useful for hard questions. |
 | `free_llm_route` | Explain where a prompt **would** route (estimated difficulty + ranked candidate models) **without spending a token**. |
 | `free_llm_models` | List available `provider/model` ids. |
 | `free_llm_quota` | Today's per-provider usage + daily-limit headroom, plus session totals and estimated cost avoided. |
@@ -77,3 +77,10 @@ Pass them through the MCP server's environment, e.g. in the config:
 - The server speaks newline-delimited JSON-RPC 2.0 over stdio (the standard MCP
   stdio transport) and is implemented on the Python standard library only.
 - `stdout` carries the protocol; freellmpool prints its banner to `stderr`.
+- **Live `tokenmax` progress:** when a client passes a `progressToken` (Claude
+  Code does), `tokenmax` streams `notifications/progress` as each model answers, so
+  you see the swarm tick up in real time. Raw ANSI can't animate inside an MCP
+  host's chat, so progress + a rainbow emoji banner are how the spectacle "comes
+  through" there. For the **genuine** flashing rainbow animation, run it in a real
+  terminal: `freellmpool tokenmax "your question"` (it also prints every answer and
+  a synthesized verdict).

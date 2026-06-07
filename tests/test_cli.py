@@ -9,6 +9,38 @@ def test_strip_plain_json():
     assert _strip_fences('{"a": 1}') == '{"a": 1}'
 
 
+def test_cli_tokenmax_smoke(providers, env, quota, monkeypatch, capsys):
+    """`freellmpool tokenmax` blasts the fake pool and prints every answer."""
+    from helpers import make_post
+
+    from freellmpool.cli import main
+    from freellmpool.router import Pool
+
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}))  # all return "ok"
+    monkeypatch.setattr(Pool, "from_default_config", classmethod(lambda cls: pool))
+    monkeypatch.setattr("freellmpool.cli._read_stdin", lambda: "")
+
+    assert main(["tokenmax", "capital of Australia?", "--no-synthesize"]) == 0
+    out = capsys.readouterr().out
+    assert "TOKENMAX" in out
+    assert "###" in out  # at least one model's answer
+
+
+def test_cli_tokenmax_synthesizes_by_default(providers, env, quota, monkeypatch, capsys):
+    from helpers import make_post
+
+    from freellmpool.cli import main
+    from freellmpool.router import Pool
+
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}))
+    monkeypatch.setattr(Pool, "from_default_config", classmethod(lambda cls: pool))
+    monkeypatch.setattr("freellmpool.cli._read_stdin", lambda: "")
+
+    assert main(["tokenmax", "hi", "--max-models", "2"]) == 0
+    out = capsys.readouterr().out
+    assert "SYNTHESIS" in out  # the verdict is produced unless --no-synthesize
+
+
 def test_strip_fenced_json():
     assert _strip_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
 
