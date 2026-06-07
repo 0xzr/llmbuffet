@@ -424,7 +424,7 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
     import getpass
     from datetime import date
 
-    from .config import load_catalog
+    from .config import load_catalog, load_config_file
     from .key_inventory import (
         KeyRecord,
         append_inventory_record,
@@ -456,14 +456,31 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
         print("No value provided.", file=sys.stderr)
         return 3
 
+    existing_keys = load_config_file().get("keys", {})
+    known_env = {str(k): str(v) for k, v in existing_keys.items() if v}
+    known_env.update(os.environ)
+    extra_values: dict[str, str] = {}
+    for env_var in provider.extra_env:
+        if known_env.get(env_var):
+            continue
+        extra_value = input(f"Paste {env_var}: ").strip()
+        if not extra_value:
+            print(f"No value provided for {env_var}.", file=sys.stderr)
+            return 3
+        extra_values[env_var] = extra_value
+
     if not args.yes:
-        answer = input(f"Write {provider.key_env} to {default_config_path()}? [y/N] ")
+        names = [str(provider.key_env), *extra_values]
+        answer = input(f"Write {', '.join(names)} to {default_config_path()}? [y/N] ")
         if answer.strip().lower() not in {"y", "yes"}:
             print("Cancelled.")
             return 1
 
     config_path = upsert_config_key(provider.key_env, value)
+    for env_var, extra_value in extra_values.items():
+        config_path = upsert_config_key(env_var, extra_value)
 
+    written_names = [str(provider.key_env), *extra_values]
     inventory_path = append_inventory_record(
         KeyRecord(
             provider=provider.id,
@@ -476,6 +493,7 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
     )
 
     print(f"Added {provider.id} key metadata.")
+    print(f"Wrote: {', '.join(written_names)}")
     print(f"Config: {config_path}")
     print(f"Inventory: {inventory_path}")
     print("Next command:")

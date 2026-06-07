@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from freellmpool.config import (
+    configured_providers,
     effective_env,
     known_aliases,
+    load_catalog,
     load_config_file,
     resolve_alias,
     settings,
@@ -27,6 +29,16 @@ def test_keys_fill_under_env(tmp_path):
     merged = effective_env(env)
     assert merged["GROQ_API_KEY"] == "from-file"
     assert merged["CEREBRAS_API_KEY"] == "from-env"
+
+
+def test_configured_providers_reads_default_config_file(tmp_path, monkeypatch):
+    env = _write(tmp_path, '[keys]\nGROQ_API_KEY = "from-file"\n')
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", env["FREELLMPOOL_CONFIG_FILE"])
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    ids = {p.id for p in configured_providers(load_catalog())}
+
+    assert "groq" in ids
 
 
 def test_config_alias(tmp_path):

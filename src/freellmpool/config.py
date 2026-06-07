@@ -359,5 +359,5 @@ def configured_providers(
 ) -> list[Provider]:
     """Return only providers that have a usable API key in the environment."""
     catalog = catalog if catalog is not None else load_catalog()
-    env = env if env is not None else dict(os.environ)
+    env = env if env is not None else effective_env()
     return [p for p in catalog if p.is_configured(env)]
