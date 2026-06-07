@@ -13,6 +13,7 @@ free LLMs:
 Tools exposed:
     free_llm_ask     ask a free model a question (prompt + optional system/model/provider)
     free_llm_models  list available provider/model ids
+    free_llm_quota   today's per-provider usage + daily-limit headroom and session totals
 
 Implemented on the standard library only — no MCP SDK required.
 """

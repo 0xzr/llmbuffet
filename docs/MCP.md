@@ -14,6 +14,7 @@ and it works (keyless providers). Add keys to unlock more.
 |---|---|
 | `free_llm_ask` | Ask a free model (`prompt`, optional `system` / `model` / `provider`). |
 | `free_llm_models` | List available `provider/model` ids. |
+| `free_llm_quota` | Today's per-provider usage + daily-limit headroom, plus session totals and estimated cost avoided. |
 
 ## Claude Desktop
 
