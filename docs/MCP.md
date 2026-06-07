@@ -12,9 +12,13 @@ and it works (keyless providers). Add keys to unlock more.
 
 | Tool | What it does |
 |---|---|
-| `free_llm_ask` | Ask a free model (`prompt`, optional `system` / `model` / `provider`). |
+| `free_llm_ask` | Ask a free model (`prompt`, optional `system` / `model` / `provider` / `routing` / `max_tokens`). The reply names the serving model. |
+| `free_llm_panel` | Ask the **same** prompt to N different free models at once and compare — a free second opinion / ensemble. Optional `synthesize` merges them into one best answer. |
+| `tokenmax` | 🌈 Gloriously excessive: blast the prompt to a big swarm of free models, then the **calling** model synthesizes them all. Tongue-in-cheek, genuinely useful for hard questions (throbs a rainbow `TOKENMAXXING` banner while it runs). |
+| `free_llm_route` | Explain where a prompt **would** route (estimated difficulty + ranked candidate models) **without spending a token**. |
 | `free_llm_models` | List available `provider/model` ids. |
 | `free_llm_quota` | Today's per-provider usage + daily-limit headroom, plus session totals and estimated cost avoided. |
+| `free_llm_stats` | Lifetime tokens served free + estimated cost avoided vs Claude Opus 4.8 (persists across restarts). |
 
 ## Claude Desktop
 

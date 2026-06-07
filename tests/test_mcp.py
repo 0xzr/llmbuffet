@@ -39,7 +39,15 @@ def test_tools_list(providers, env, quota):
     pool = _pool(providers, env, quota)
     resp = handle_message(pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert names == {"free_llm_ask", "free_llm_models", "free_llm_quota"}
+    assert names == {
+        "free_llm_ask",
+        "free_llm_panel",
+        "tokenmax",
+        "free_llm_route",
+        "free_llm_models",
+        "free_llm_quota",
+        "free_llm_stats",
+    }
 
 
 def test_tools_call_quota(providers, env, quota):
@@ -65,8 +73,92 @@ def test_tools_call_ask(providers, env, quota):
             "params": {"name": "free_llm_ask", "arguments": {"prompt": "hi"}},
         },
     )
-    assert resp["result"]["content"][0]["text"] == "ok"
+    text = resp["result"]["content"][0]["text"]
+    assert text.startswith("ok")
+    assert "via alpha/" in text  # provenance footer names the serving model
     assert resp["result"]["isError"] is False
+
+
+def test_tools_call_panel(providers, env, quota):
+    pool = _pool(providers, env, quota)  # all providers return "ok"
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {"name": "free_llm_panel", "arguments": {"prompt": "hi", "n": 2}},
+        },
+    )
+    text = resp["result"]["content"][0]["text"]
+    assert "panel" in text.lower()
+    assert text.count("###") >= 2  # one section per model asked
+
+
+def test_tools_call_tokenmax(providers, env, quota):
+    pool = _pool(providers, env, quota)  # all providers return "ok"
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "tools/call",
+            "params": {"name": "tokenmax", "arguments": {"prompt": "hi", "max_models": 3}},
+        },
+    )
+    text = resp["result"]["content"][0]["text"]
+    assert "TOKENMAX" in text
+    assert "synthesize" in text.lower()  # the caller is told to synthesize
+    assert text.count("###") >= 1  # at least one model's answer included
+
+
+def test_tokenmax_default_respects_hard_cap(providers, env, quota, monkeypatch):
+    import freellmpool.mcp_server as M
+
+    monkeypatch.setattr(M, "_TOKENMAX_HARD_CAP", 2)  # even "all" must obey the ceiling
+    pool = _pool(providers, env, quota)
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": {"name": "tokenmax", "arguments": {"prompt": "hi"}},  # no max_models -> ALL
+        },
+    )
+    assert "to 2 models" in resp["result"]["content"][0]["text"]
+
+
+def test_tools_call_route_is_zero_token(providers, env, quota):
+    pool = _pool(providers, env, quota)
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "free_llm_route",
+                "arguments": {"prompt": "hi", "routing": "quality"},
+            },
+        },
+    )
+    text = resp["result"]["content"][0]["text"]
+    assert "difficulty" in text.lower()
+    assert "alpha/" in text  # a ranked candidate
+    assert pool.stats_snapshot()["requests"] == 0  # explained without spending a token
+
+
+def test_tools_call_stats(providers, env, quota):
+    pool = _pool(providers, env, quota)
+    pool.ask("hi")  # record some usage
+    resp = handle_message(
+        pool,
+        {"jsonrpc": "2.0", "id": 12, "method": "tools/call", "params": {"name": "free_llm_stats"}},
+    )
+    text = resp["result"]["content"][0]["text"]
+    assert "lifetime" in text.lower()
+    assert "Claude Opus 4.8" in text
 
 
 def test_tools_call_ask_missing_prompt(providers, env, quota):

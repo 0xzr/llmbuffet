@@ -840,7 +840,7 @@ def _dashboard_html(pool) -> str:
         ("requests served", str(s.get("requests", 0))),
         ("cache hits", str(s.get("cache_hits", 0))),
         ("healthy providers", f"{capacity.healthy_count}/{capacity.target}"),
-        ("not paid to OpenAI", f"${saved:,.2f}"),
+        ("not spent (Claude Opus 4.8)", f"${saved:,.2f}"),
     ]
     card_html = "\n".join(
         f"<div class=card><div class=big>{v}</div><div class=lbl>{k}</div></div>" for k, v in cards

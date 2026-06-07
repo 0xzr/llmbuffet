@@ -123,7 +123,7 @@ def summary_svg(stats: dict, leaderboard: list[tuple[str, float]] | None = None)
         f"free LLMs, pooled</text>",
         f'<text x="20" y="84" fill="{_GREEN}" font-size="38" font-weight="bold">'
         f"{_esc(_money(_saved(stats)))}</text>",
-        f'<text x="20" y="104" fill="{_MUTED}" font-size="12">avoided cost (gpt-4o rates)</text>',
+        f'<text x="20" y="104" fill="{_MUTED}" font-size="12">avoided cost (Claude Opus 4.8 rates)</text>',
         f'<text x="20" y="132" fill="{_TEXT}" font-size="13">'
         f"{_esc(_compact(_tokens(stats)))} tokens served free  ·  "
         f"{_esc(_compact(stats.get('requests', 0)))} requests"

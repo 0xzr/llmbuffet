@@ -177,6 +177,31 @@ class Pool:
             return self._stats_store.snapshot()
         return {**self.stats_snapshot(), "first_seen": None}
 
+    def rank_targets(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        routing: str | None = None,
+        model: str | None = None,
+        providers: Iterable[str] | None = None,
+    ) -> list[Target]:
+        """Public: the ordered candidate (provider, model) targets for ``messages``,
+        using the same ordering the failover loop would. Powers the MCP route
+        explainer and multi-model panel (which fan out across the top targets) without
+        re-implementing routing. Read-only — does not call any provider."""
+        provider_list = list(providers) if providers else None
+        eff = (
+            routing
+            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            else self.routing
+        )
+        difficulty = prompt_difficulty(messages) if eff == "quality" else None
+        return self._order(
+            self._all_targets(include=provider_list, model=model),
+            difficulty=difficulty,
+            routing=routing,
+        )
+
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
         until = now + self.cooldown_seconds
         with self._cooldown_lock:

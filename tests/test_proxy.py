@@ -83,7 +83,7 @@ def test_dashboard(server):
         body = resp.read().decode()
     assert "freellmpool" in body
     assert "providers configured" in body
-    assert "not paid to OpenAI" in body
+    assert "not spent (Claude Opus 4.8)" in body
 
 
 def test_healthz(server):
