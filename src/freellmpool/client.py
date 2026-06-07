@@ -18,6 +18,7 @@ import json
 import re
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -79,6 +80,8 @@ StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 _USER_AGENT = "freellmpool/0.11 (+https://github.com/0xzr/freellmpool)"
 
 _CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
+# Cap a single upstream reply so a broken/malicious provider can't OOM the proxy.
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024  # 32 MiB
 _shared = None  # one pooled, keep-alive httpx.Client shared across calls/threads
 _shared_lock = threading.Lock()
 
@@ -117,13 +120,40 @@ def _timeout(timeout: float):
 
 
 def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
-    """Real network POST via the pooled httpx client."""
-    resp = _client().post(url, headers=headers, json=json_body, timeout=_timeout(timeout))
+    """Real network POST via the pooled httpx client.
+
+    Streams the response so we can (1) cap it at ``_MAX_RESPONSE_BYTES`` — a broken
+    or malicious provider can't OOM the proxy — and (2) enforce a wall-clock deadline
+    so a slow-drip upstream (one byte before each per-read timeout) can't pin a worker
+    indefinitely. Either guard raises, which the router treats as a failed attempt and
+    fails over."""
+    deadline = time.monotonic() + timeout
+    with _client().stream(
+        "POST", url, headers=headers, json=json_body, timeout=_timeout(timeout)
+    ) as resp:
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_bytes():
+            total += len(chunk)
+            if total > _MAX_RESPONSE_BYTES:
+                raise ProviderHTTPError(
+                    502, f"upstream response exceeded {_MAX_RESPONSE_BYTES} bytes", retryable=True
+                )
+            if time.monotonic() > deadline:
+                raise ProviderHTTPError(
+                    504, f"upstream exceeded {timeout:.0f}s deadline", retryable=True
+                )
+            chunks.append(chunk)
+        status = resp.status_code
+    raw = b"".join(chunks)
+    text = raw.decode("utf-8", "replace")
     try:
-        body = resp.json()
+        body = json.loads(raw) if raw else {}
+        if not isinstance(body, dict):
+            body = {}
     except (json.JSONDecodeError, ValueError):
         body = {}
-    return HTTPResult(status=resp.status_code, body=body, text=resp.text)
+    return HTTPResult(status=status, body=body, text=text)
 
 
 class _StreamLines:
@@ -132,13 +162,32 @@ class _StreamLines:
     (where the caller closes it before ever iterating). Does NOT close the shared
     client — only the response/stream."""
 
-    def __init__(self, cm, resp):
+    def __init__(self, cm, resp, deadline: float | None = None):
         self._cm, self._resp = cm, resp
         self._closed = False
+        self._deadline = deadline  # monotonic wall-clock cap on the whole stream
 
     def __iter__(self) -> Iterator[str]:
+        # Iterate raw text chunks (not iter_lines) and split lines ourselves, so the
+        # deadline is checked on EVERY chunk received — a slow-drip upstream that
+        # trickles bytes *without a newline* would block iter_lines forever and never
+        # reach a between-lines check. The per-read httpx timeout bounds idle gaps;
+        # this total deadline bounds steady slow-drip that would pin a worker.
+        buf = ""
         try:
-            yield from self._resp.iter_lines()
+            for chunk in self._resp.iter_text():
+                if self._deadline is not None and time.monotonic() > self._deadline:
+                    raise ProviderHTTPError(
+                        504, "upstream exceeded stream deadline", retryable=True
+                    )
+                if not chunk:
+                    continue
+                buf += chunk
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    yield line.rstrip("\r")
+            if buf:
+                yield buf.rstrip("\r")
         finally:
             self.close()
 
@@ -154,13 +203,14 @@ class _StreamLines:
 
 def default_stream_post(url: str, headers: dict, json_body: dict, timeout: float):
     """Open a streaming POST on the pooled client and return (status, line iter)."""
+    deadline = time.monotonic() + timeout
     cm = _client().stream("POST", url, headers=headers, json=json_body, timeout=_timeout(timeout))
     try:
         resp = cm.__enter__()
     except BaseException:  # opening the stream failed — release the connection
         cm.__exit__(*sys.exc_info())
         raise
-    return resp.status_code, _StreamLines(cm, resp)
+    return resp.status_code, _StreamLines(cm, resp, deadline=deadline)
 
 
 def stream_call(

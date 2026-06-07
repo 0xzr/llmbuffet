@@ -23,8 +23,19 @@ class AllProvidersExhausted(FreeLLMPoolError):
     describing what was tried and why each one was skipped or failed.
     """
 
-    def __init__(self, attempts: list[tuple[str, str]]):
+    def __init__(
+        self,
+        attempts: list[tuple[str, str]],
+        *,
+        client_status: int | None = None,
+        client_message: str | None = None,
+    ):
         self.attempts = attempts
+        # If the failures were caused by a non-retryable *client* error (a 4xx that
+        # means the request itself is wrong, not the provider), carry its status so
+        # the proxy can surface that instead of a generic 502.
+        self.client_status = client_status
+        self.client_message = client_message
         detail = "; ".join(f"{name}: {reason}" for name, reason in attempts) or "no candidates"
         super().__init__(f"all providers exhausted ({detail})")
 
