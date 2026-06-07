@@ -24,15 +24,26 @@ model setting untouched — just set the base URL and any API key.
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "freellmpool/auto",
   "provider": {
     "freellmpool": {
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": "http://localhost:8080/v1" },
-      "models": { "auto": { "name": "freellmpool (auto)" } }
+      "models": { "auto": {}, "fast": {}, "quality": {}, "fair": {} }
     }
   }
 }
 ```
+Pick `freellmpool/auto|fast|quality|fair` in the model picker to control routing
+(`quality` = capability-matched + latency-aware; `fast` = lowest latency; `fair` =
+spread quota). Full guide: <https://0xzr.github.io/freellmpool/run-opencode-on-free-models.html>.
+
+**Embedded dashboard + tools (optional).** Two OpenCode plugins live in the repo:
+- [`integrations/opencode-tui`](../integrations/opencode-tui) — a live in-editor TUI
+  dashboard (routing mode, $ saved, tokens served free, provider race, latency
+  sparkline, last-served model). Install: `opencode plugin -g file:<repo>/integrations/opencode-tui`.
+- [`integrations/opencode`](../integrations/opencode) — a server plugin adding
+  `freellmpool_status` and `freellmpool_models` tools and a served-model toast.
 
 ### aider
 ```bash
