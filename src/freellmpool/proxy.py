@@ -25,6 +25,7 @@ import collections
 import hmac
 import json
 import os
+import re
 import threading
 from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -102,11 +103,11 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
     now = pool._clock()
     quota_snap = pool.quota.snapshot()
     metrics_snap = pool.metrics.snapshot()
+    cooldown_snap = pool.cooldown_snapshot(now)  # locked read; no torn cooldown state
 
     providers_list = []
     for p in pool.providers:
-        cooldown_until = pool._cooldown_until.get(p.id, 0.0)
-        cooldown_remaining = max(0.0, cooldown_until - now)
+        cooldown_remaining = cooldown_snap.get(p.id, 0.0)
 
         models_list = []
         for m in p.models:
@@ -137,7 +138,7 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
             }
         )
 
-    s = pool.stats
+    s = pool.stats_snapshot()
     saved = usd_saved(s.get("prompt_tokens", 0), s.get("completion_tokens", 0))
     life = pool.lifetime_stats()
 
@@ -685,10 +686,17 @@ def _normalize_messages(messages: list) -> list[dict]:
     return out
 
 
+def _header_safe(value: object) -> str:
+    """Strip control chars (CR/LF/...) so a provider/model name can never inject a
+    response header. Catalog validation already rejects these at load; this is
+    defense-in-depth for any value reaching an HTTP header."""
+    return re.sub(r"[\x00-\x1f\x7f]", "", str(value))
+
+
 def _obs_headers(reply) -> dict:
     return {
-        "X-Freellmpool-Provider": reply.provider_id,
-        "X-Freellmpool-Model": reply.model,
+        "X-Freellmpool-Provider": _header_safe(reply.provider_id),
+        "X-Freellmpool-Model": _header_safe(reply.model),
         "X-Freellmpool-Attempts": reply.attempts,
     }
 
@@ -738,7 +746,7 @@ def _dashboard_html(pool) -> str:
     from .key_inventory import load_inventory
     from .savings import usd_saved
 
-    s = pool.stats
+    s = pool.stats_snapshot()
     saved = usd_saved(s.get("prompt_tokens"), s.get("completion_tokens"))
     snap = pool.quota.snapshot()
     by_provider: dict[str, int] = {}

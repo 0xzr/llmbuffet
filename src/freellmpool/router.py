@@ -159,12 +159,23 @@ class Pool:
         if self._stats_store is not None:
             self._stats_store.add(**deltas)
 
+    def stats_snapshot(self) -> dict:
+        """A consistent copy of the session stats counters, read under the lock so
+        readers (/status, MCP, CLI) never see a torn requests/tokens pair."""
+        with self._stats_lock:
+            return dict(self.stats)
+
+    def cooldown_snapshot(self, now: float) -> dict[str, float]:
+        """provider_id -> seconds remaining on cooldown, read under the lock."""
+        with self._cooldown_lock:
+            return {pid: max(0.0, until - now) for pid, until in self._cooldown_until.items()}
+
     def lifetime_stats(self) -> dict:
         """Persistent lifetime totals (+ first_seen), or the in-memory session
         totals if no persistent store is wired."""
         if self._stats_store is not None:
             return self._stats_store.snapshot()
-        return {**self.stats, "first_seen": None}
+        return {**self.stats_snapshot(), "first_seen": None}
 
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
         until = now + self.cooldown_seconds

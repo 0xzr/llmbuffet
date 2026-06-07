@@ -136,7 +136,7 @@ def _quota_summary(pool: Pool) -> str:
         else:
             lines.append(f"{p.id:<13}{u:>6}  {'unmetered':<18}-")
 
-    s = pool.stats
+    s = pool.stats_snapshot()
     lines += [
         "",
         f"session: {s.get('requests', 0)} requests, {s.get('cache_hits', 0)} cache hits, "

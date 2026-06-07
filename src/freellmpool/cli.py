@@ -658,7 +658,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        s = pool.stats
+        s = pool.stats_snapshot()
         saved = format_saved(s["prompt_tokens"], s["completion_tokens"])
         print(
             f"\nfreellmpool: shutting down — served {s['requests']} requests · {saved}",

@@ -13,15 +13,95 @@ environment are returned by :func:`configured_providers`.
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import os
 import re
+import socket
 import tomllib
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .models import Model, Provider
 
 _PACKAGED_CATALOG = Path(__file__).with_name("providers.toml")
+_log = logging.getLogger("freellmpool")
+
+# Control characters (incl. CR/LF/TAB) are never valid in a base_url, provider id,
+# or model name — they enable response-header injection (those values are echoed
+# into X-Freellmpool-* headers) and request smuggling.
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _allow_local_providers() -> bool:
+    """Opt-in (FREELLMPOOL_ALLOW_LOCAL_PROVIDERS) to permit loopback/private
+    base_urls — for users who deliberately run self-hosted providers (Ollama,
+    LM Studio, a LAN gateway)."""
+    return os.environ.get("FREELLMPOOL_ALLOW_LOCAL_PROVIDERS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _safe_name(value: str) -> bool:
+    return bool(value) and _CTRL_RE.search(value) is None
+
+
+def _safe_base_url(url: str, *, allow_local: bool) -> bool:
+    """Reject base_urls that would turn a configured provider key into an SSRF /
+    key-exfil vector: non-http(s) schemes, embedded credentials, control chars, and
+    (unless opted in) loopback / private / link-local / reserved targets. A bare
+    hostname that isn't a literal private IP is allowed (public DNS); DNS-rebinding
+    is out of scope for a parse-time check."""
+    if not url or _CTRL_RE.search(url) or any(c.isspace() for c in url):
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https") or parts.username or parts.password:
+        return False
+    host = parts.hostname
+    # Non-ASCII hosts (fullwidth digits/dots, unicode look-alikes like "ⓛocalhost")
+    # and percent-encoded hosts are IDNA/resolver-normalized to a real target at
+    # connect time and can map to loopback — legit provider hosts are plain ASCII.
+    if not host or not host.isascii() or "%" in host or "\\" in host:
+        return False
+    if allow_local:
+        return True
+    host = host.rstrip(".")  # a trailing dot (FQDN root) must not bypass the checks
+    low = host.lower()
+    if not low or low == "localhost" or low.endswith((".local", ".internal", ".localhost")):
+        return False
+    # Canonicalize the host to a literal IP if it is one in ANY form a resolver
+    # accepts — dotted, but also decimal (2130706433), hex (0x7f000001), octal, and
+    # short forms (127.1) — so those can't smuggle a loopback/private target past us.
+    candidate = host
+    try:
+        candidate = socket.inet_ntoa(socket.inet_aton(host))
+    except OSError:
+        pass
+    try:
+        ip = ipaddress.ip_address(candidate)
+    except ValueError:
+        return True  # a real hostname, not any literal-IP form
+    # An IPv4-mapped IPv6 (::ffff:127.0.0.1) reflects the embedded IPv4's reachability;
+    # normalize so the check is correct on every Python, not only 3.11+ (bpo-46203).
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return not (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_unspecified
+        or ip.is_multicast
+    )
+
 
 # Common OpenAI / Anthropic model names mapped to a free target, so existing
 # code (which hardcodes e.g. "gpt-4o-mini") works against freellmpool unchanged.
@@ -103,9 +183,7 @@ def _alias_cache_key(env: dict[str, str]) -> tuple:
         stat.st_mtime_ns if stat is not None else 0,
         stat.st_size if stat is not None else 0,
     )
-    env_aliases = tuple(
-        sorted((k, v) for k, v in env.items() if k.startswith(_ALIAS_ENV_PREFIX))
-    )
+    env_aliases = tuple(sorted((k, v) for k, v in env.items() if k.startswith(_ALIAS_ENV_PREFIX)))
     return config_sig + (env_aliases,)
 
 
@@ -187,16 +265,32 @@ def _parse_rows(rows: list) -> list[Provider]:
     bad int) is skipped, not fatal, so one typo in a user catalog can't brick the
     whole tool. The packaged catalog is valid, so this is a no-op for it."""
     providers: list[Provider] = []
+    allow_local = _allow_local_providers()
     for row in rows:
         if not isinstance(row, dict) or not row.get("id") or not row.get("base_url"):
+            continue
+        provider_id = str(row["id"])
+        base_url = str(row["base_url"]).rstrip("/")
+        # Security: a bad base_url turns this provider's API key into an SSRF /
+        # key-exfil POST; a control char in the id/name injects response headers.
+        # Drop the offending row (tolerant, like a malformed row) and warn.
+        if not _safe_name(provider_id):
+            _log.warning("skipping provider with unsafe id %r", provider_id)
+            continue
+        if not _safe_base_url(base_url, allow_local=allow_local):
+            _log.warning("skipping provider %s: unsafe base_url %r", provider_id, base_url)
             continue
         models = []
         for m in row.get("models", []):
             if not isinstance(m, dict) or not m.get("name"):
                 continue
+            model_name = str(m["name"])
+            if not _safe_name(model_name):
+                _log.warning("skipping model with unsafe name %r on %s", model_name, provider_id)
+                continue
             models.append(
                 Model(
-                    name=str(m["name"]),
+                    name=model_name,
                     rpd=_maybe_int(m.get("rpd", 0)) or 0,
                     enabled=bool(m.get("enabled", True)),
                     context=_maybe_int(m.get("context"), positive=True),
@@ -204,10 +298,10 @@ def _parse_rows(rows: list) -> list[Provider]:
             )
         providers.append(
             Provider(
-                id=str(row["id"]),
+                id=provider_id,
                 label=str(row.get("label", row["id"])),
                 adapter=str(row.get("adapter", "openai")),
-                base_url=str(row["base_url"]).rstrip("/"),
+                base_url=base_url,
                 key_env=row.get("key_env"),
                 auth=str(row.get("auth", "bearer")),
                 key_optional=bool(row.get("key_optional", False)),
