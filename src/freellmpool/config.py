@@ -331,6 +331,22 @@ def configured_embedders(
     return [p for p in catalog if p.is_configured(env)]
 
 
+def load_transcribers(path: Path | None = None) -> list[Provider]:
+    """Load the transcriber catalog ([[transcriber]] rows). Same shape as providers —
+    audio→text (Whisper) endpoints on the OpenAI /audio/transcriptions surface."""
+    base_path = path or _PACKAGED_CATALOG
+    with base_path.open("rb") as fh:
+        return _parse_rows(tomllib.load(fh).get("transcriber", []))
+
+
+def configured_transcribers(
+    catalog: list[Provider] | None = None, env: dict[str, str] | None = None
+) -> list[Provider]:
+    catalog = catalog if catalog is not None else load_transcribers()
+    env = env if env is not None else dict(os.environ)
+    return [p for p in catalog if p.is_configured(env)]
+
+
 def load_catalog(path: Path | None = None) -> list[Provider]:
     """Load the full provider catalog (built-ins + user overrides)."""
     base_path = path or _PACKAGED_CATALOG

@@ -550,3 +550,15 @@ models = [
     { name = "nvidia/nv-embedqa-mistral-7b-v2", rpd = 0 },
     { name = "snowflake/arctic-embed-l", rpd = 0 },
 ]
+
+# ── transcribers: audio→text (OpenAI /audio/transcriptions shape). Failover order. ──
+[[transcriber]]
+id = "groq"
+label = "Groq (Whisper)"
+adapter = "openai"
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+models = [
+    { name = "whisper-large-v3-turbo", rpd = 0 },
+    { name = "whisper-large-v3", rpd = 0 },
+]

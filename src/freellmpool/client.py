@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .errors import ProviderHTTPError
-from .models import EmbedReply, Provider, Reply
+from .models import EmbedReply, Provider, Reply, TranscribeReply
 
 Message = dict[str, str]
 
@@ -531,6 +531,97 @@ def embed(
         vectors=vectors,
         provider_id=provider.id,
         model=model,
+        prompt_tokens=usage.get("prompt_tokens"),
+    )
+
+
+# A multipart transport: (url, headers, files, data, timeout) -> HTTPResult. Separate from
+# PostFn because audio uploads are multipart/form-data, not a JSON body. Injectable for tests.
+MultipartPostFn = Callable[[str, dict, dict, dict, float], HTTPResult]
+
+
+def default_multipart_post(
+    url: str, headers: dict, files: dict, data: dict, timeout: float
+) -> HTTPResult:
+    """Real network multipart POST (file upload) via the pooled httpx client. httpx sets the
+    multipart Content-Type + boundary from ``files`` itself. Inherits ``follow_redirects=False``
+    so a redirect can't exfiltrate the API key (SSRF). Streams + caps the response like
+    ``default_post`` so a broken provider can't OOM the proxy and a slow-drip upstream can't
+    pin a worker past the deadline."""
+    deadline = time.monotonic() + timeout
+    with _client().stream(
+        "POST", url, headers=headers, files=files, data=data, timeout=_timeout(timeout)
+    ) as resp:
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_bytes():
+            total += len(chunk)
+            if total > _MAX_RESPONSE_BYTES:
+                raise ProviderHTTPError(
+                    502, f"upstream response exceeded {_MAX_RESPONSE_BYTES} bytes", retryable=True
+                )
+            if time.monotonic() > deadline:
+                raise ProviderHTTPError(
+                    504, f"upstream exceeded {timeout:.0f}s deadline", retryable=True
+                )
+            chunks.append(chunk)
+        status = resp.status_code
+        ctype = resp.headers.get("content-type", "")
+    raw = b"".join(chunks)
+    text = raw.decode("utf-8", "replace")
+    if "application/json" in ctype:
+        try:
+            body = json.loads(raw) if raw else {}
+        except (json.JSONDecodeError, ValueError):
+            body = {"text": text}  # non-JSON despite the header → treat text as the result
+        if not isinstance(body, dict):  # provider returned a JSON list/scalar
+            body = {}  # keep _err_message safe; transcribe() falls back to result.text
+    else:
+        body = {"text": text}  # response_format=text returns the transcription as plain text
+    return HTTPResult(status=status, body=body, text=text)
+
+
+def transcribe(
+    provider: Provider,
+    model: str,
+    audio: bytes,
+    filename: str,
+    *,
+    api_key: str | None,
+    env: dict[str, str],
+    language: str | None = None,
+    response_format: str = "json",
+    timeout: float = 90.0,
+    post: MultipartPostFn = default_multipart_post,
+) -> TranscribeReply:
+    """Dispatch an audio-transcription request (OpenAI ``/audio/transcriptions`` shape)."""
+    base_url = provider.base_url
+    if provider.adapter == "cloudflare" or "{account_id}" in base_url:
+        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+    url = f"{base_url}/audio/transcriptions"
+    headers = {}  # NOTE: no Content-Type — the transport sets the multipart boundary
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    files = {"file": (filename or "audio", audio, "application/octet-stream")}
+    data = {"model": model, "response_format": response_format}
+    if language:
+        data["language"] = language
+    result = post(url, headers, files, data, timeout)
+    if result.status != 200:
+        raise ProviderHTTPError(
+            result.status, _err_message(result), retryable=_retryable(result.status)
+        )
+    body = result.body if isinstance(result.body, dict) else {}
+    text = (body.get("text") if isinstance(body.get("text"), str) else None) or result.text or ""
+    text = text.strip()
+    if not text:
+        raise ProviderHTTPError(502, "empty transcription", retryable=True)
+    usage = body.get("usage") or {}
+    return TranscribeReply(
+        text=text,
+        provider_id=provider.id,
+        model=model,
+        raw=body or {"text": text},
         prompt_tokens=usage.get("prompt_tokens"),
     )
 

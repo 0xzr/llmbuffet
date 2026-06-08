@@ -638,6 +638,131 @@ def test_header_routing_override_accepted(server):
     assert "x_freellmpool" in body
 
 
+def test_parse_multipart_form_unit():
+    from freellmpool.proxy import _parse_multipart_form
+
+    ct = "multipart/form-data; boundary=XB"
+    body = (
+        b'--XB\r\nContent-Disposition: form-data; name="model"\r\n\r\nm1\r\n'
+        b'--XB\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+        b"Content-Type: audio/wav\r\n\r\nAUDIO\x00\x01\r\n--XB--\r\n"
+    )
+    f = _parse_multipart_form(ct, body)
+    assert f["model"] == "m1"
+    assert f["file"] == ("a.wav", b"AUDIO\x00\x01")  # binary bytes preserved
+
+
+def test_parse_multipart_form_binary_safe_embedded_boundary():
+    # Audio bytes that contain "--XB" (NOT preceded by CRLF) must NOT be treated as a
+    # delimiter — the payload must survive intact.
+    from freellmpool.proxy import _parse_multipart_form
+
+    audio = b"PRE--XB-and-more\x00\xff"
+    ct = "multipart/form-data; boundary=XB"
+    body = (
+        b'--XB\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n\r\n'
+        + audio
+        + b"\r\n--XB--\r\n"
+    )
+    f = _parse_multipart_form(ct, body)
+    assert f["file"] == ("a.wav", audio)
+
+
+def test_parse_multipart_form_missing_closing_boundary_raises():
+    from freellmpool.proxy import _parse_multipart_form
+
+    ct = "multipart/form-data; boundary=XB"
+    # no trailing "--XB--"
+    body = b'--XB\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n\r\nAUDIO'
+    with pytest.raises(ValueError, match="closing"):
+        _parse_multipart_form(ct, body)
+
+
+def _multipart_audio(boundary, audio, model="whisper-large-v3-turbo", with_file=True):
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n{model}\r\n'.encode()
+    ]
+    if with_file:
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+            f"Content-Type: audio/wav\r\n\r\n".encode()
+            + audio
+            + b"\r\n"
+        )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts)
+
+
+def _transcribe_server(providers, env, quota, text="the transcript"):
+    from freellmpool.client import HTTPResult
+    from freellmpool.models import Model, Provider
+
+    tr = [
+        Provider(
+            id="groq",
+            label="Groq",
+            adapter="openai",
+            base_url="https://api.groq.com/openai/v1",
+            key_env="GROQ_API_KEY",
+            models=(Model("whisper-large-v3-turbo"),),
+        )
+    ]
+
+    def fake_mp(url, headers, files, data, timeout):
+        assert url.endswith("/audio/transcriptions")
+        assert files["file"][0] == "a.wav"
+        return HTTPResult(status=200, body={"text": text}, text=text)
+
+    pool = Pool(
+        providers,
+        quota=quota,
+        env={**env, "GROQ_API_KEY": "x"},
+        post=make_post({}),
+        stream_post=make_stream_post({}),
+        transcribers=tr,
+        transcribe_post=fake_mp,
+    )
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def test_audio_transcription_route(providers, env, quota):
+    httpd, base = _transcribe_server(providers, env, quota)
+    try:
+        body = _multipart_audio("BOUND1", b"RIFF\x00fakeaudio")
+        req = urllib.request.Request(
+            base + "/v1/audio/transcriptions",
+            data=body,
+            headers={"Content-Type": "multipart/form-data; boundary=BOUND1"},
+        )
+        with urllib.request.urlopen(req) as resp:  # noqa: S310
+            d = json.load(resp)
+        assert d["text"] == "the transcript"
+        assert d["x_freellmpool"]["provider"] == "groq"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_audio_transcription_missing_file_400(providers, env, quota):
+    httpd, base = _transcribe_server(providers, env, quota)
+    try:
+        body = _multipart_audio("BOUND1", b"", with_file=False)
+        req = urllib.request.Request(
+            base + "/v1/audio/transcriptions",
+            data=body,
+            headers={"Content-Type": "multipart/form-data; boundary=BOUND1"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req)  # noqa: S310
+        assert exc.value.code == 400
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def _post_json_with_headers(url, payload, headers):
     req = urllib.request.Request(
         url,

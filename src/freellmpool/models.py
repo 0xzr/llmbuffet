@@ -89,3 +89,14 @@ class EmbedReply:
     provider_id: str
     model: str
     prompt_tokens: int | None = None
+
+
+@dataclass
+class TranscribeReply:
+    """A normalized audio-transcription (speech→text) result from some provider."""
+
+    text: str
+    provider_id: str
+    model: str
+    raw: dict
+    prompt_tokens: int | None = None

@@ -17,13 +17,22 @@ from dataclasses import dataclass
 from . import client as _client
 from .cache import Cache
 from .capability import capability_table, fit_penalty, model_capability, prompt_difficulty
-from .client import PostFn, StreamPostFn, default_post, default_stream_post
+from .client import (
+    MultipartPostFn,
+    PostFn,
+    StreamPostFn,
+    default_multipart_post,
+    default_post,
+    default_stream_post,
+)
 from .config import (
     configured_embedders,
     configured_providers,
+    configured_transcribers,
     effective_env,
     load_catalog,
     load_embedders,
+    load_transcribers,
     settings,
 )
 from .context import context_limit_from_error, estimate_input_tokens
@@ -34,7 +43,7 @@ from .errors import (
     ProviderHTTPError,
 )
 from .metrics import Metrics
-from .models import EmbedReply, Provider, Reply
+from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
 from .quota import QuotaStore
 from .stats import StatsStore
@@ -112,7 +121,9 @@ class Pool:
         cooldown_seconds: float = 60.0,
         clock: Callable[[], float] | None = None,
         embedders: list[Provider] | None = None,
+        transcribers: list[Provider] | None = None,
         stream_post: StreamPostFn = default_stream_post,
+        transcribe_post: MultipartPostFn = default_multipart_post,
         cache: Cache | None = None,
         metrics: Metrics | None = None,
         routing: str = "fair",
@@ -121,6 +132,8 @@ class Pool:
     ):
         self.providers = providers
         self.embedders = embedders or []
+        self.transcribers = transcribers or []
+        self._transcribe_post = transcribe_post
         self.quota = quota or QuotaStore()
         self.env = env if env is not None else dict(os.environ)
         self._post = post
@@ -273,6 +286,7 @@ class Pool:
         catalog = list(by_id.values())
         providers = configured_providers(catalog, env)
         embedders = configured_embedders(load_embedders(), env)
+        transcribers = configured_transcribers(load_transcribers(), env)
         cfg = settings(env)
         cooldown = float(cfg.get("cooldown_seconds", 60.0))
         ttl = float(env.get("FREELLMPOOL_CACHE_TTL") or cfg.get("cache_ttl", 0) or 0)
@@ -285,6 +299,7 @@ class Pool:
             post=post,
             cooldown_seconds=cooldown,
             embedders=embedders,
+            transcribers=transcribers,
             cache=cache,
             routing=routing,
             on_event=on_event,
@@ -332,6 +347,53 @@ class Pool:
                 self.quota.record(emb.id, m.name)
                 self._bump_stats(requests=1, prompt_tokens=reply.prompt_tokens or 0)
                 return reply
+        raise AllProvidersExhausted(attempts)
+
+    def transcribe(
+        self,
+        audio: bytes,
+        filename: str,
+        *,
+        model: str | None = None,
+        providers: Iterable[str] | None = None,
+        language: str | None = None,
+        response_format: str = "json",
+        timeout: float = 90.0,
+    ) -> TranscribeReply:
+        """Transcribe audio→text, failing over across configured transcribers (Whisper)."""
+        if not self.transcribers:
+            raise NoProvidersConfigured(
+                "no transcriber configured; set a key for one of: groq (see docs/ACCOUNTS.md)"
+            )
+        include = {p.strip() for p in providers} if providers else None
+        attempts: list[tuple[str, str]] = []
+        for tr in self.transcribers:
+            if include is not None and tr.id not in include:
+                continue
+            for m in tr.models:
+                if model is not None and m.name != model:
+                    continue
+                try:
+                    reply = _client.transcribe(
+                        tr,
+                        m.name,
+                        audio,
+                        filename,
+                        api_key=tr.api_key(self.env),
+                        env=self.env,
+                        language=language,
+                        response_format=response_format,
+                        timeout=timeout,
+                        post=self._transcribe_post,
+                    )
+                except Exception as exc:  # noqa: BLE001 — try the next transcriber
+                    attempts.append((f"{tr.id}/{m.name}", f"{type(exc).__name__}: {exc}"))
+                    continue
+                self.quota.record(tr.id, m.name)
+                self._bump_stats(requests=1, prompt_tokens=reply.prompt_tokens or 0)
+                return reply
+        if not attempts:  # provider/model pins matched no configured transcriber
+            raise NoProvidersConfigured("no candidate transcriber/model matched the given filters")
         raise AllProvidersExhausted(attempts)
 
     # ---- candidate ordering -------------------------------------------

@@ -14,6 +14,7 @@ Supported routes:
     GET  /v1/models                 list available (provider/model) ids
     POST /v1/chat/completions       route a chat completion (true token streaming)
     POST /v1/embeddings             pooled free embeddings
+    POST /v1/audio/transcriptions   pooled free audio transcription (Whisper, multipart)
     POST /v1/responses              Responses API shim (Codex CLI / agents)
     POST /v1/messages               Anthropic Messages shim (Claude Code / agents)
     GET  /healthz                   liveness probe
@@ -350,8 +351,17 @@ def make_handler(pool: Pool, api_key: str | None = None):
             is_count = route.endswith("/v1/messages/count_tokens")
             is_messages = not is_count and (route.endswith("/v1/messages") or route == "/messages")
             is_tokenmax = route.endswith("/tokenmax") or route == "/tokenmax"
+            is_transcription = (
+                route.endswith("/v1/audio/transcriptions") or route == "/audio/transcriptions"
+            )
             if not (
-                is_chat or is_responses or is_embeddings or is_messages or is_count or is_tokenmax
+                is_chat
+                or is_responses
+                or is_embeddings
+                or is_messages
+                or is_count
+                or is_tokenmax
+                or is_transcription
             ):
                 self._error(404, f"unknown route {self.path}", "not_found")
                 return
@@ -371,10 +381,20 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._error(413, "request body too large", "invalid_request_error")
                 return
             try:
-                raw = self.rfile.read(length) if length else b"{}"
+                raw = self.rfile.read(length) if length else b""
                 if length and len(raw) < length:  # client aborted / truncated body
                     self._error(400, "incomplete request body", "invalid_request_error")
                     return
+            except (OSError, ValueError):
+                self._error(400, "could not read request body", "invalid_request_error")
+                return
+
+            # Audio uploads are multipart/form-data, not JSON — handle before parsing JSON.
+            if is_transcription:
+                self._handle_transcription(raw, self.headers.get("Content-Type", ""))
+                return
+
+            try:
                 req = json.loads(raw or b"{}")
             except (json.JSONDecodeError, ValueError):
                 self._error(400, "invalid JSON body", "invalid_request_error")
@@ -545,6 +565,60 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._error(502, str(exc), "all_providers_exhausted")
                 return
             self._send(200, _to_embeddings_response(reply))
+
+        def _handle_transcription(self, raw: bytes, content_type: str) -> None:
+            """OpenAI /audio/transcriptions (multipart): file + model → {text}."""
+            if "multipart/form-data" not in content_type.lower():
+                self._error(
+                    400, "audio transcription requires multipart/form-data", "invalid_request_error"
+                )
+                return
+            try:
+                form = _parse_multipart_form(content_type, raw)
+            except ValueError as exc:
+                self._error(400, f"malformed multipart body: {exc}", "invalid_request_error")
+                return
+            filepart = form.get("file")
+            if not isinstance(filepart, tuple):
+                self._error(400, "'file' part is required", "invalid_request_error")
+                return
+            filename, audio = filepart
+            if not audio:
+                self._error(400, "'file' is empty", "invalid_request_error")
+                return
+            requested = form.get("model") if isinstance(form.get("model"), str) else None
+            language = form.get("language") if isinstance(form.get("language"), str) else None
+            response_format = form.get("response_format")
+            response_format = response_format if isinstance(response_format, str) else "json"
+            # Resolve "auto" / "provider" / "provider/model" against the transcriber providers.
+            provider_filter = None
+            model = None
+            if requested and requested not in ("", "auto"):
+                provider_filter, model = _parse_model(requested, {p.id for p in pool.transcribers})
+            try:
+                reply = pool.transcribe(
+                    audio,
+                    filename,
+                    model=model,
+                    providers=provider_filter,
+                    language=language,
+                    response_format=response_format,
+                )
+            except NoProvidersConfigured as exc:
+                self._error(503, str(exc), "no_providers")
+                return
+            except AllProvidersExhausted as exc:
+                self._error(502, str(exc), "all_providers_exhausted")
+                return
+            if response_format in ("text", "srt", "vtt"):
+                payload = reply.text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            else:
+                self._send(200, _to_transcription_response(reply))
 
         def _resolve(self, req: dict, messages: list[dict], *, tools=None, tool_choice=None):
             """Shared: resolve model/params and call the pool. Returns a Reply or
@@ -845,6 +919,50 @@ def _to_embeddings_response(reply) -> dict:
         },
         "x_freellmpool": {"provider": reply.provider_id, "model": reply.model},
     }
+
+
+def _to_transcription_response(reply) -> dict:
+    return {
+        "text": reply.text,
+        "x_freellmpool": {"provider": reply.provider_id, "model": reply.model},
+    }
+
+
+def _parse_multipart_form(content_type: str, body: bytes) -> dict:
+    """Minimal multipart/form-data parser (stdlib only — ``cgi`` is gone in 3.13).
+
+    Returns ``{name: str}`` for text fields and ``{name: (filename, bytes)}`` for file
+    parts. Raises ``ValueError`` on a missing/garbled boundary."""
+    m = re.search(r'boundary="?([^";]+)"?', content_type, re.IGNORECASE)
+    if not m:
+        raise ValueError("no boundary in Content-Type")
+    boundary = m.group(1).strip().encode("latin-1")
+    # The RFC-2046 inter-part delimiter is CRLF + "--boundary". Anchor on it (rather than a
+    # bare "--boundary") so binary audio bytes that happen to contain "--boundary" can't be
+    # mistaken for a delimiter and silently truncate the upload. Prepend a CRLF so the very
+    # first delimiter (which has no preceding CRLF in the body) matches uniformly.
+    segments = (b"\r\n" + body).split(b"\r\n--" + boundary)
+    # segments[0] is the preamble (normally empty); a well-formed body ends with the closing
+    # "--boundary--", so the LAST segment must begin with "--". Reject truncated/garbled bodies.
+    if len(segments) < 2 or not segments[-1].startswith(b"--"):
+        raise ValueError("missing closing multipart boundary")
+    out: dict = {}
+    for seg in segments[1:-1]:  # drop the preamble and the trailing closing segment
+        seg = seg[2:] if seg.startswith(b"\r\n") else seg  # CRLF terminating the boundary line
+        hdr, sep, payload = seg.partition(b"\r\n\r\n")
+        if not sep:
+            continue
+        headers = hdr.decode("latin-1", "replace")
+        name_m = re.search(r'name="([^"]*)"', headers, re.IGNORECASE)
+        if not name_m:
+            continue
+        name = name_m.group(1)
+        fn_m = re.search(r'filename="([^"]*)"', headers, re.IGNORECASE)
+        if fn_m is not None:
+            out[name] = (fn_m.group(1), payload)  # file part → raw bytes
+        else:
+            out[name] = payload.decode("utf-8", "replace")  # text field
+    return out
 
 
 def _to_openai_response(reply) -> dict:
