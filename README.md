@@ -127,6 +127,18 @@ print(client.chat.completions.create(
     model="auto",
     messages=[{"role": "user", "content": "hi"}],
 ).choices[0].message.content)
+
+# audio → text (Whisper), same client:
+print(client.audio.transcriptions.create(
+    model="auto", file=open("audio.mp3", "rb"),
+).text)
+```
+
+Or with `curl` (multipart upload):
+
+```bash
+curl -s http://localhost:8080/v1/audio/transcriptions \
+  -F file=@audio.mp3 -F model=auto
 ```
 
 The proxy also implements the OpenAI Responses API (for the Codex CLI) and the
@@ -138,7 +150,8 @@ freellmpool code aider       # also: claude, codex, cline, continue, cursor, ope
 ```
 
 Endpoints: `/v1/chat/completions` (token streaming, tool calling), `/v1/embeddings`,
-`/v1/responses`, `/v1/messages`, `/v1/models`, and a `/dashboard` page showing usage.
+`/v1/audio/transcriptions` (Whisper, multipart upload), `/v1/responses`, `/v1/messages`,
+`/v1/models`, and a `/dashboard` page showing usage.
 Setup snippets for specific tools are in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
 and [docs/AGENTS.md](docs/AGENTS.md).
 
@@ -152,6 +165,9 @@ reply = pool.ask("Summarize the plot of Hamlet in 20 words.")
 print(reply.text, "—", reply.provider_id)
 
 vectors = pool.embed(["first document", "second document"]).vectors
+
+with open("audio.mp3", "rb") as f:
+    text = pool.transcribe(f.read(), "audio.mp3").text   # Whisper, failover across providers
 ```
 
 Async is the same API with `await`:

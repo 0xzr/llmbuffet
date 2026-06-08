@@ -24,6 +24,9 @@ shell or put it in a `.env` file (copy [`.env.example`](../.env.example)).
 2. Click **Create API Key**, name it anything, copy the value (`gsk_...`).
 3. `export GROQ_API_KEY=gsk_...`
 
+   The same key also powers free **audio transcription** (Whisper) via
+   `/v1/audio/transcriptions`.
+
 ### Cerebras — *~1 min, no card*
 1. Go to <https://cloud.cerebras.ai> and sign in.
 2. Open **API Keys** → **Generate key**, copy it (`csk-...`).
