@@ -562,3 +562,13 @@ models = [
     { name = "whisper-large-v3-turbo", rpd = 0 },
     { name = "whisper-large-v3", rpd = 0 },
 ]
+
+[[transcriber]]
+id = "mistral"
+label = "Mistral (Voxtral)"
+adapter = "openai"
+base_url = "https://api.mistral.ai/v1"
+key_env = "MISTRAL_API_KEY"
+models = [
+    { name = "voxtral-mini-latest", rpd = 0 },
+]

@@ -56,6 +56,9 @@ That's enough to start. Run `freellmpool ask "hello"`.
 1. <https://console.mistral.ai/api-keys> → **Create new key**.
 2. `export MISTRAL_API_KEY=...`
 
+   Also gives free **audio transcription** (Voxtral) — a failover for Groq's
+   Whisper on `/v1/audio/transcriptions`.
+
 ### Cohere — *free trial keys*
 1. <https://dashboard.cohere.com/api-keys> → copy your **Trial key**.
 2. `export COHERE_API_KEY=...`

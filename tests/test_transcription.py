@@ -24,8 +24,11 @@ def _transcriber(tid: str, key_env: str) -> Provider:
 
 def test_transcriber_catalog_loads():
     cat = load_transcribers()
-    ids = {t.id for t in cat}
-    assert "groq" in ids
+    ids = [t.id for t in cat]
+    # Groq (Whisper) + Mistral (Voxtral); catalog order IS failover order (Pool.transcribe
+    # iterates the list), so assert Groq precedes Mistral, not just membership.
+    assert "groq" in ids and "mistral" in ids
+    assert ids.index("groq") < ids.index("mistral")
     for t in cat:
         assert t.base_url.startswith("https://")
         assert t.models
@@ -34,7 +37,11 @@ def test_transcriber_catalog_loads():
 def test_configured_transcribers_filter():
     cat = load_transcribers()
     got = {t.id for t in configured_transcribers(cat, {"GROQ_API_KEY": "x"})}
-    assert got == {"groq"}
+    assert got == {"groq"}  # only providers whose key is set are configured
+    both = {
+        t.id for t in configured_transcribers(cat, {"GROQ_API_KEY": "x", "MISTRAL_API_KEY": "y"})
+    }
+    assert {"groq", "mistral"} <= both
     assert configured_transcribers(cat, {}) == []  # no key → nothing configured
 
 
