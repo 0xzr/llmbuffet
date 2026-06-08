@@ -25,10 +25,14 @@ def _transcriber(tid: str, key_env: str) -> Provider:
 def test_transcriber_catalog_loads():
     cat = load_transcribers()
     ids = [t.id for t in cat]
-    # Groq (Whisper) + Mistral (Voxtral); catalog order IS failover order (Pool.transcribe
-    # iterates the list), so assert Groq precedes Mistral, not just membership.
     assert "groq" in ids and "mistral" in ids
-    assert ids.index("groq") < ids.index("mistral")
+    # Catalog order IS failover/`auto` order (Pool.transcribe iterates the list). Quality-first
+    # per the WER smoke test: Mistral Voxtral (most accurate) precedes Groq Whisper.
+    assert ids.index("mistral") < ids.index("groq")
+    # Within Groq, whisper-large-v3 precedes -turbo (quality-first).
+    groq = next(t for t in cat if t.id == "groq")
+    gm = [m.name for m in groq.models]
+    assert gm.index("whisper-large-v3") < gm.index("whisper-large-v3-turbo")
     for t in cat:
         assert t.base_url.startswith("https://")
         assert t.models
@@ -79,6 +83,31 @@ def test_client_transcribe_text_format_plain_body():
         post=post,
     )
     assert reply.text == "plain transcript"
+
+
+def test_client_transcribe_empty_text_is_success_not_failover():
+    # Silent audio → {"text": ""} on HTTP 200 is a VALID (empty) transcription, not an error.
+    # It must return "" rather than raise (which would force needless failover/exhaustion).
+    def post(url, headers, files, data, timeout):
+        return C.HTTPResult(200, {"text": ""}, "")
+
+    t = _transcriber("groq", "GROQ_API_KEY")
+    reply = C.transcribe(t, "whisper-large-v3", b"AUDIO", "a.wav", api_key="k", env={}, post=post)
+    assert reply.text == ""
+    assert reply.provider_id == "groq"
+
+
+def test_client_transcribe_no_text_field_raises():
+    # A 200 JSON dict with no text field is malformed → retryable error (drives failover),
+    # even when the raw response body text is non-empty (must NOT pass raw JSON as a transcript).
+    from freellmpool.errors import ProviderHTTPError
+
+    def post(url, headers, files, data, timeout):
+        return C.HTTPResult(200, {"unexpected": "shape"}, '{"unexpected":"shape"}')
+
+    t = _transcriber("groq", "GROQ_API_KEY")
+    with pytest.raises(ProviderHTTPError):
+        C.transcribe(t, "whisper-large-v3", b"AUDIO", "a.wav", api_key="k", env={}, post=post)
 
 
 def test_pool_transcribe_failover():

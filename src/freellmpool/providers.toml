@@ -552,17 +552,9 @@ models = [
 ]
 
 # ── transcribers: audio→text (OpenAI /audio/transcriptions shape). Failover order. ──
-[[transcriber]]
-id = "groq"
-label = "Groq (Whisper)"
-adapter = "openai"
-base_url = "https://api.groq.com/openai/v1"
-key_env = "GROQ_API_KEY"
-models = [
-    { name = "whisper-large-v3-turbo", rpd = 0 },
-    { name = "whisper-large-v3", rpd = 0 },
-]
-
+# Quality-first order from a local WER smoke test (5 known-speech clips, 2026-06-08): Voxtral
+# was most accurate (WER 0.024), then whisper-large-v3 (0.070), then -turbo (0.062, fastest).
+# `auto` walks this list top-down, so the most accurate model is the default.
 [[transcriber]]
 id = "mistral"
 label = "Mistral (Voxtral)"
@@ -571,4 +563,15 @@ base_url = "https://api.mistral.ai/v1"
 key_env = "MISTRAL_API_KEY"
 models = [
     { name = "voxtral-mini-latest", rpd = 0 },
+]
+
+[[transcriber]]
+id = "groq"
+label = "Groq (Whisper)"
+adapter = "openai"
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+models = [
+    { name = "whisper-large-v3", rpd = 0 },
+    { name = "whisper-large-v3-turbo", rpd = 0 },
 ]

@@ -44,6 +44,12 @@ from .router import Pool
 from .savings import usd_saved
 
 _MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
+# Audio uploads are larger than JSON; Groq's free tier accepts up to 25 MB, so cap audio
+# multipart bodies there rather than at the JSON limit (a valid 20 MB clip must not 413).
+_MAX_AUDIO_BODY = 25 * 1024 * 1024
+# response_format values we forward. srt/vtt aren't accepted by Groq/Mistral's transcription
+# endpoints (they'd fail upstream and surface as a confusing 502), so reject them up front.
+_TRANSCRIPTION_FORMATS = ("json", "text", "verbose_json")
 
 
 def _model_ids(pool: Pool) -> list[str]:
@@ -377,7 +383,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
             if length < 0:
                 self._error(400, "invalid Content-Length header", "invalid_request_error")
                 return
-            if length > _MAX_BODY:
+            max_body = _MAX_AUDIO_BODY if is_transcription else _MAX_BODY
+            if length > max_body:
                 self._error(413, "request body too large", "invalid_request_error")
                 return
             try:
@@ -590,6 +597,14 @@ def make_handler(pool: Pool, api_key: str | None = None):
             language = form.get("language") if isinstance(form.get("language"), str) else None
             response_format = form.get("response_format")
             response_format = response_format if isinstance(response_format, str) else "json"
+            if response_format not in _TRANSCRIPTION_FORMATS:
+                self._error(
+                    400,
+                    f"unsupported response_format '{response_format}'; use one of "
+                    f"{', '.join(_TRANSCRIPTION_FORMATS)}",
+                    "invalid_request_error",
+                )
+                return
             # Resolve "auto" / "provider" / "provider/model" against the transcriber providers.
             provider_filter = None
             model = None
@@ -610,7 +625,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
             except AllProvidersExhausted as exc:
                 self._error(502, str(exc), "all_providers_exhausted")
                 return
-            if response_format in ("text", "srt", "vtt"):
+            if response_format == "text":
                 payload = reply.text.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -953,7 +968,10 @@ def _parse_multipart_form(content_type: str, body: bytes) -> dict:
         if not sep:
             continue
         headers = hdr.decode("latin-1", "replace")
-        name_m = re.search(r'name="([^"]*)"', headers, re.IGNORECASE)
+        # Negative lookbehind for a letter so this matches the `name=` parameter but NOT the
+        # `name` inside `filename=` — otherwise a part with only a filename would be accepted
+        # as a named field (and could masquerade as the required `file` field).
+        name_m = re.search(r'(?<![A-Za-z])name="([^"]*)"', headers, re.IGNORECASE)
         if not name_m:
             continue
         name = name_m.group(1)

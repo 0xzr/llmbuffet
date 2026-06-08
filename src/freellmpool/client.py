@@ -612,16 +612,21 @@ def transcribe(
             result.status, _err_message(result), retryable=_retryable(result.status)
         )
     body = result.body if isinstance(result.body, dict) else {}
-    text = (body.get("text") if isinstance(body.get("text"), str) else None) or result.text or ""
-    text = text.strip()
-    if not text:
-        raise ProviderHTTPError(502, "empty transcription", retryable=True)
+    raw_text = body.get("text")
+    # `default_multipart_post` always lands the transcript under body["text"] (plain-text
+    # responses too), so a missing/non-string text field means a malformed response — retry
+    # another provider rather than passing a raw JSON blob through as the transcript.
+    if not isinstance(raw_text, str):
+        raise ProviderHTTPError(502, "malformed transcription response (no text)", retryable=True)
+    # A present `text` field is a successful result — an empty string means the clip was silent,
+    # NOT a failure. Returning "" avoids needless failover/exhaustion for legitimately silent audio.
+    text = raw_text.strip()
     usage = body.get("usage") or {}
     return TranscribeReply(
         text=text,
         provider_id=provider.id,
         model=model,
-        raw=body or {"text": text},
+        raw=body,
         prompt_tokens=usage.get("prompt_tokens"),
     )
 

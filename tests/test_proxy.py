@@ -668,6 +668,22 @@ def test_parse_multipart_form_binary_safe_embedded_boundary():
     assert f["file"] == ("a.wav", audio)
 
 
+def test_parse_multipart_form_filename_not_mistaken_for_name():
+    # A part with ONLY filename= (no name=) must NOT be parsed as a named field — the `name`
+    # inside `filename=` must not match the name= parameter.
+    from freellmpool.proxy import _parse_multipart_form
+
+    ct = "multipart/form-data; boundary=XB"
+    body = (
+        b'--XB\r\nContent-Disposition: form-data; filename="file"\r\n\r\nDATA\r\n'
+        b'--XB\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n\r\nAUDIO\r\n'
+        b"--XB--\r\n"
+    )
+    f = _parse_multipart_form(ct, body)
+    # the real file part wins; the no-name part is skipped (not stored under "file")
+    assert f["file"] == ("a.wav", b"AUDIO")
+
+
 def test_parse_multipart_form_missing_closing_boundary_raises():
     from freellmpool.proxy import _parse_multipart_form
 
@@ -754,6 +770,32 @@ def test_audio_transcription_missing_file_400(providers, env, quota):
             base + "/v1/audio/transcriptions",
             data=body,
             headers={"Content-Type": "multipart/form-data; boundary=BOUND1"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req)  # noqa: S310
+        assert exc.value.code == 400
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_audio_transcription_unsupported_format_400(providers, env, quota):
+    # srt/vtt aren't accepted upstream — the proxy must reject them with 400, not 502.
+    httpd, base = _transcribe_server(providers, env, quota)
+    try:
+        b = "BOUND1"
+        body = (
+            f'--{b}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-large-v3-turbo\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nsrt\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+            f"Content-Type: audio/wav\r\n\r\n".encode()
+            + b"RIFF\x00fake"
+            + f"\r\n--{b}--\r\n".encode()
+        )
+        req = urllib.request.Request(
+            base + "/v1/audio/transcriptions",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={b}"},
         )
         with pytest.raises(urllib.error.HTTPError) as exc:
             urllib.request.urlopen(req)  # noqa: S310
