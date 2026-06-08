@@ -164,6 +164,20 @@ if [ -d "$INTEG/opencode-tui" ]; then
   cp -rf "$INTEG/opencode-tui/." "$IMG_CFG/tui-plugin/"
 fi
 
+# ── /goal long-horizon plugin (auto-continues toward an objective on session.idle) ─────
+# Installed as an npm spec opencode fetches into the capped image state (persists). It must
+# be in BOTH the server (opencode.jsonc) and tui (tui.json) plugin lists. Set OPENCODE_FP_GOAL
+# to a different package, or empty, to change/disable.
+GOAL="${OPENCODE_FP_GOAL-@prevalentware/opencode-goal-plugin}"
+case "$GOAL" in *[!A-Za-z0-9@/._-]*) echo "ERROR: OPENCODE_FP_GOAL has invalid chars" >&2; exit 2 ;; esac
+if [ -n "$GOAL" ]; then
+  PLUGIN_LIST="\"$J_CFG/plugin/freellmpool.js\", [\"$GOAL\", { \"auto_continue\": true, \"min_continue_interval_seconds\": 3 }]"
+  TUI_PLUGIN_LIST="\"file:$J_CFG/tui-plugin\", \"$GOAL\""
+else
+  PLUGIN_LIST="\"$J_CFG/plugin/freellmpool.js\""
+  TUI_PLUGIN_LIST="\"file:$J_CFG/tui-plugin\""
+fi
+
 # ── jail-only OpenCode config (regenerated each run; lives in the capped image) ────────
 cat > "$IMG_CFG/opencode.jsonc" <<JSON
 {
@@ -181,7 +195,7 @@ cat > "$IMG_CFG/opencode.jsonc" <<JSON
     "external_directory": "allow",
     "webfetch": "allow", "websearch": "allow"
   },
-  "plugin": ["$J_CFG/plugin/freellmpool.js"],
+  "plugin": [ $PLUGIN_LIST ],
   "provider": {
     "freellmpool": {
       "npm": "@ai-sdk/openai-compatible",
@@ -198,7 +212,7 @@ cat > "$IMG_CFG/opencode.jsonc" <<JSON
   }
 }
 JSON
-printf '{\n  "plugin": ["file:%s/tui-plugin"]\n}\n' "$J_CFG" > "$IMG_CFG/tui.json"
+printf '{\n  "plugin": [ %s ]\n}\n' "$TUI_PLUGIN_LIST" > "$IMG_CFG/tui.json"
 
 # ── preflight: host proxy reachable (shared net) ──────────────────────────────────────
 if [ "$MODE" != "selftest" ] && ! curl -fsS --max-time 3 "$PROXY_URL/healthz" >/dev/null 2>&1; then
