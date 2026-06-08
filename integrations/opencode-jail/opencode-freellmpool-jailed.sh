@@ -26,7 +26,7 @@
 #         opencode-freellmpool-jailed.sh --serve     # opencode serve (basic-auth)
 #         opencode-freellmpool-jailed.sh --selftest  # prove containment + stealth, exit
 #
-# ENV KNOBS: OPENCODE_FP_MODEL (default freellmpool/fast — snappy; "quality" stalls on slow
+# ENV KNOBS: OPENCODE_FP_MODEL (default freellmpool/fair — spreads load across ALL providers;
 #   models), OPENCODE_FP_PROJECT (in-jail project basename, default "project"),
 #   OPENCODE_FP_PROXY_URL, OPENCODE_FP_CPUS/MEM/DISK (default 1 / 6G / 12G),
 #   OPENCODE_FP_PORT (--serve), OPENCODE_FP_ALLOW_UNCAPPED=1 (run without the disk image —
@@ -46,7 +46,9 @@ esac
 
 # ── tunables ────────────────────────────────────────────────────────────────────────
 PROXY_URL="${OPENCODE_FP_PROXY_URL:-http://127.0.0.1:8765}"
-MODEL="${OPENCODE_FP_MODEL:-freellmpool/fast}"   # fast = lowest-latency; quality is slow/stally
+MODEL="${OPENCODE_FP_MODEL:-freellmpool/fair}"   # fair = least-used-first → spreads load across ALL
+                                                 # providers (best for sustained agentic loops; 'fast'
+                                                 # hammers the same few → 429 storms)
 PROJECT="${OPENCODE_FP_PROJECT:-project}"         # in-jail cwd basename — NOT "sandbox"
 PORT="${OPENCODE_FP_PORT:-4099}"
 HOSTBIND="127.0.0.1"
