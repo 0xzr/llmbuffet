@@ -824,8 +824,34 @@ class Pool:
             self.quota.record(target.provider.id, target.model)
             self._bump_stats(requests=1)
             yield {"provider": target.provider.id, "model": target.model}
-            yield first
-            yield from gen
+            # Accumulate the streamed text so we can record token usage when the stream
+            # ends. Providers rarely send a usage block on a stream, so without this the
+            # session + lifetime token / savings totals — and the dashboard's tok/s — never
+            # move for streaming clients (e.g. OpenCode). chars/4 ≈ tokens, matching
+            # estimate_tokens; prompt size reuses est_tokens computed above.
+            streamed: list[str] = [first] if isinstance(first, str) else []
+            drained = False
+            try:
+                yield first
+                for chunk in gen:
+                    if isinstance(chunk, str):
+                        streamed.append(chunk)
+                    yield chunk
+                drained = True
+            finally:
+                # The manual loop (vs `yield from`) doesn't auto-delegate close(), so on an
+                # early consumer disconnect we must close the upstream stream ourselves to
+                # release the provider HTTP connection promptly. Guard for iterators that
+                # aren't generators. Only count a fully-drained stream — a disconnected/
+                # truncated one isn't a completed response.
+                closer = getattr(gen, "close", None)
+                if callable(closer):
+                    closer()
+                if drained:
+                    self._bump_stats(
+                        prompt_tokens=max(0, est_tokens),
+                        completion_tokens=max(0, sum(len(s) for s in streamed) // 4),
+                    )
             return
 
         emit(self._on_event, "exhausted", attempts=len(attempts))

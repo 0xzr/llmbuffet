@@ -91,6 +91,74 @@ def test_healthz(server):
         assert resp.status == 200
 
 
+def test_tokenmax_route(server):
+    status, body = _post_json(server + "/tokenmax", {"prompt": "hi", "max_models": 3})
+    assert status == 200
+    assert body["total"] >= 1
+    assert isinstance(body["answers"], list)
+    assert any(a["text"] == "ok" for a in body["answers"])  # openai-adapter fakes answer "ok"
+
+
+def test_tokenmax_requires_prompt(server):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post_json(server + "/tokenmax", {})
+    assert exc.value.code == 400
+
+
+def test_status_has_tokenmax_field_idle(server):
+    with urllib.request.urlopen(server + "/status") as resp:  # noqa: S310
+        s = json.load(resp)
+    assert s["tokenmax"]["active"] is False  # default snapshot before any run
+
+
+def test_status_tokenmax_active_during_run(providers, env, quota):
+    """A barrier-blocked swarm lets /status observe tokenmax.active live (the signal the
+    OpenCode TUI throbs on), then settle to done==total when it finishes."""
+    import time
+
+    from helpers import openai_body
+
+    from freellmpool.client import HTTPResult
+
+    release = threading.Event()
+
+    def slow_post(url, headers, json_body, timeout):
+        release.wait(2.0)  # hold every fan-out call open until the test releases it
+        return HTTPResult(status=200, body=openai_body("ok"), text="ok")
+
+    pool = Pool(providers, quota=quota, env=env, post=slow_post, stream_post=make_stream_post({}))
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        runner = threading.Thread(
+            target=lambda: _post_json(base + "/tokenmax", {"prompt": "hi", "max_models": 3}),
+            daemon=True,
+        )
+        runner.start()
+        active_seen = False
+        for _ in range(100):  # poll until the swarm is in flight
+            with urllib.request.urlopen(base + "/status") as resp:  # noqa: S310
+                tm = json.load(resp)["tokenmax"]
+            if tm.get("active"):
+                active_seen = True
+                assert tm["total"] == 3
+                break
+            time.sleep(0.02)
+        release.set()
+        runner.join(timeout=3)
+        assert active_seen, "tokenmax.active was never observable during the run"
+        with urllib.request.urlopen(base + "/status") as resp:  # noqa: S310
+            tm2 = json.load(resp)["tokenmax"]
+        assert tm2["active"] is False
+        assert tm2["done"] == tm2["total"] == 3
+    finally:
+        release.set()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_content_parts_flattened(server):
     status, body = _post_json(
         server + "/v1/chat/completions",
@@ -129,6 +197,39 @@ def test_streaming_sse(server):
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"  # stop chunk last
     content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
     assert content == "ok"
+
+
+def test_streaming_counts_tokens(providers, env, quota):
+    """Streamed responses must accrue token usage (else $ saved / tokens / tok/s never
+    move for streaming clients like OpenCode). Tokens are estimated from the streamed
+    text, so /status reflects the stream after it drains."""
+    stream = make_stream_post({"alpha": ["Hello there, ", "this is a ", "streamed answer."]})
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), stream_post=stream)
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        req = urllib.request.Request(
+            base + "/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "alpha/alpha-small",  # pin the openai-adapter provider
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "hello there"}],
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:  # noqa: S310
+            resp.read()  # drain the whole stream so end-of-stream accounting runs
+        with urllib.request.urlopen(base + "/status") as resp:  # noqa: S310
+            pool_stats = json.load(resp)["pool"]
+        assert pool_stats["completion_tokens"] > 0  # streamed output is now counted
+        assert pool_stats["prompt_tokens"] > 0
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def _expect_status(url, payload, headers=None):

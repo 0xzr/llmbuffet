@@ -33,7 +33,7 @@ import time
 
 from .config import resolve_alias
 from .router import Pool
-from .tokenmax import HARD_CAP, RAINBOW_BANNER, RainbowThrob, fan_out, select_targets
+from .tokenmax import HARD_CAP, RAINBOW_BANNER, fan_out, select_targets
 
 _DEFAULT_PROTOCOL = "2025-06-18"
 _ROUTING_MODES = ("fair", "fast", "quality", "legacy", "model", "model-fast")
@@ -365,14 +365,16 @@ def _tool_tokenmax(pool: Pool, args: dict, notify=None) -> dict:
     if not picks:
         return _text("no providers configured", is_error=True)
 
-    # Live progress for hosts that support it (Claude Code shows the message ticking
-    # up). Raw ANSI can't animate inside an MCP chat, so this is the "it's alive" signal.
+    # Live progress for hosts that support it (Claude Code shows the message ticking up).
+    # This is the ONLY "it's alive" signal that reaches an MCP user: raw ANSI can't animate
+    # inside an MCP chat, so there is no rainbow throb here (it would only spew breadcrumbs
+    # into the host's stderr log). For the genuine flashing animation use the CLI
+    # (`freellmpool tokenmax`); for a live in-harness graphic use the OpenCode TUI plugin.
     def progress(done: int, total: int, _label: str) -> None:
         if notify is not None:
             notify(done, total, f"🌈 TOKENMAXXING ▸ {done}/{total} models")
 
-    with RainbowThrob(f"TOKENMAXXING {len(picks)} models across {n_providers} providers"):
-        answered, failed = fan_out(pool, msgs, picks, max_tokens=max_tokens, progress=progress)
+    answered, failed = fan_out(pool, msgs, picks, max_tokens=max_tokens, progress=progress)
 
     head = [
         f"{RAINBOW_BANNER} TOKENMAX — blasted your prompt to {len(picks)} models across "

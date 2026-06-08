@@ -94,11 +94,13 @@ def _provider_leaderboard(pool: Pool, limit: int = 5) -> list[tuple[str, float]]
     return [(pid, count / top) for pid, count in ranked if count > 0]
 
 
-def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
+def _status_payload(pool: Pool, recent: Sequence[dict], tokenmax: dict | None = None) -> dict:
     """Return a JSON-able status payload for the /status endpoint.
 
     ``recent`` is a snapshot (most-recent-first) of the served-target ring buffer,
-    taken under its lock by the caller so iteration here is race-free.
+    taken under its lock by the caller so iteration here is race-free. ``tokenmax`` is
+    an optional snapshot of the live tokenmax-swarm progress (the OpenCode TUI animates
+    its rainbow throb while ``active`` is true).
     """
     now = pool._clock()
     quota_snap = pool.quota.snapshot()
@@ -162,6 +164,7 @@ def _status_payload(pool: Pool, recent: Sequence[dict]) -> dict:
         },
         "providers": providers_list,
         "recent": list(recent),
+        "tokenmax": tokenmax or {"active": False},
     }
 
 
@@ -191,6 +194,19 @@ def make_handler(pool: Pool, api_key: str | None = None):
     def record_recent(entry: dict) -> None:
         with recent_lock:
             recent.appendleft(entry)
+
+    # Live tokenmax-swarm progress, surfaced via /status so the OpenCode TUI can throb
+    # its rainbow banner while a swarm is in flight. Mutated from a request thread (and
+    # its fan-out workers via the progress callback); guard every read/write with the lock.
+    tokenmax_state: dict = {"active": False}
+    tokenmax_lock = threading.Lock()
+
+    def tokenmax_snapshot() -> dict:
+        with tokenmax_lock:
+            snap = dict(tokenmax_state)
+        if snap.get("active") and snap.get("started_at") is not None:
+            snap["elapsed_s"] = round(max(0.0, pool._clock() - snap["started_at"]), 1)
+        return snap
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "freellmpool/0.10"
@@ -315,7 +331,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
             if path in ("/status", "/v1/status"):
                 with recent_lock:
                     recent_snapshot = list(recent)
-                self._send(200, _status_payload(pool, recent_snapshot))
+                self._send(200, _status_payload(pool, recent_snapshot, tokenmax_snapshot()))
                 return
             self._error(404, f"unknown route {self.path}", "not_found")
 
@@ -326,7 +342,10 @@ def make_handler(pool: Pool, api_key: str | None = None):
             is_embeddings = route.endswith("/v1/embeddings") or route == "/embeddings"
             is_count = route.endswith("/v1/messages/count_tokens")
             is_messages = not is_count and (route.endswith("/v1/messages") or route == "/messages")
-            if not (is_chat or is_responses or is_embeddings or is_messages or is_count):
+            is_tokenmax = route.endswith("/tokenmax") or route == "/tokenmax"
+            if not (
+                is_chat or is_responses or is_embeddings or is_messages or is_count or is_tokenmax
+            ):
                 self._error(404, f"unknown route {self.path}", "not_found")
                 return
             if not self._authorized():
@@ -365,8 +384,87 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self._send(200, {"input_tokens": estimate_tokens(req)})
             elif is_messages:
                 self._handle_messages(req)
+            elif is_tokenmax:
+                self._handle_tokenmax(req)
             else:
                 self._handle_chat(req)
+
+        def _handle_tokenmax(self, req: dict) -> None:
+            """🌈 Fan a prompt out to EVERY model and report live progress via /status so
+            the OpenCode TUI can throb its rainbow banner. Returns every answer for the
+            caller to synthesize."""
+            from . import tokenmax as _tm
+
+            prompt = req.get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip():
+                self._error(400, "'prompt' is required", "invalid_request_error")
+                return
+            msgs: list[dict[str, str]] = []
+            system = req.get("system")
+            if isinstance(system, str) and system.strip():
+                msgs.append({"role": "system", "content": system})
+            msgs.append({"role": "user", "content": prompt})
+            try:
+                max_tokens = max(1, min(8192, int(req.get("max_tokens", 350))))
+            except (TypeError, ValueError):
+                max_tokens = 350
+
+            picks, n_providers = _tm.select_targets(pool, msgs, req.get("max_models"))
+            if not picks:
+                self._error(503, "no providers configured", "no_providers")
+                return
+            total = len(picks)
+
+            def on_progress(done: int, _total: int, _label: str) -> None:
+                with tokenmax_lock:
+                    if tokenmax_state.get("active"):  # don't resurrect a finished/cleared run
+                        # fan_out releases its counter lock before invoking this callback, so
+                        # worker callbacks can arrive out of order — clamp to keep the bar
+                        # monotonic (never jump backwards).
+                        tokenmax_state["done"] = max(int(tokenmax_state.get("done", 0)), done)
+
+            # Claim the single shared display slot atomically: only one swarm "owns" the
+            # /status banner at a time, so a second concurrent run can't clobber the first's
+            # progress. (tokenmax is a max-effort blast; serializing the display is fine.)
+            with tokenmax_lock:
+                busy = bool(tokenmax_state.get("active"))
+                if not busy:
+                    tokenmax_state.clear()
+                    tokenmax_state.update(
+                        {
+                            "active": True,
+                            "prompt": prompt[:120],
+                            "done": 0,
+                            "total": total,
+                            "n_providers": n_providers,
+                            "started_at": pool._clock(),
+                        }
+                    )
+            if busy:
+                self._error(409, "a tokenmax swarm is already in flight", "tokenmax_busy")
+                return
+            try:
+                answered, failed = _tm.fan_out(
+                    pool, msgs, picks, max_tokens=max_tokens, progress=on_progress
+                )
+                with tokenmax_lock:  # success: reflect the final, complete counts
+                    tokenmax_state["done"] = total
+                    tokenmax_state["answered"] = len(answered)
+            finally:
+                # Always release the slot so the TUI stops throbbing — even if the swarm
+                # errored (then `done` keeps its last real value rather than overstating).
+                with tokenmax_lock:
+                    tokenmax_state["active"] = False
+            self._send(
+                200,
+                {
+                    "answers": [{"model": lbl, "text": txt} for lbl, txt in answered],
+                    "failed": failed,
+                    "answered": len(answered),
+                    "total": total,
+                    "n_providers": n_providers,
+                },
+            )
 
         def _handle_messages(self, req: dict) -> None:
             """Anthropic Messages API shim — lets Claude Code & friends use free models."""

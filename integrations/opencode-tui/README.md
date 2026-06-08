@@ -18,12 +18,28 @@ session sidebar and on the home screen — showing, in real time, how much your 
 └───────────────────────────────────┘
 ```
 
-- **routing mode**, **$ saved**, **tokens served free**, and live **throughput (tok/s)**
+- **routing mode**, **$ saved**, **tokens served free**, and live **throughput (tok/s)** —
+  the totals are **lifetime aggregates** (persisted, summed across the proxy + CLI + MCP,
+  so they survive restarts and count *all* freellmpool usage, not just this OpenCode session)
 - a medal'd **provider race** — requests used today vs daily cap, with live cooldown timers
 - a **latency sparkline** (best provider EWMA over time)
 - the **most-recently-served** provider/model
-- updates every 1.5s by polling the proxy's `/status`; shows an offline banner if the
-  proxy is down
+- a **🌈 live TOKENMAXXING animation** — when a `tokenmax` swarm is in flight (see below),
+  the panel throbs a color-cycling `🌈 T O K E N M A X X I N G 🌈` banner with an
+  `N/total models` progress bar, then flashes a completion line. This is the genuine
+  in-harness graphic that MCP can't render — it works here because the plugin draws real
+  OpenTUI, not text in a tool result.
+- updates every 1.5s by polling the proxy's `/status` (every 0.3s while a swarm runs);
+  shows an offline banner if the proxy is down
+
+## 🌈 TOKENMAXXING — the live rainbow
+
+Install the companion tools plugin in `../opencode` and ask OpenCode to use the
+`freellmpool_tokenmax` tool (e.g. *"tokenmax: what's the best…"*). It blasts your prompt to
+**every** free model at once via the proxy's `/tokenmax` endpoint; while the swarm drains,
+**this dashboard throbs the rainbow animation live** and the model synthesizes every answer.
+The flashing is a real terminal animation — to also get it standalone, run
+`freellmpool tokenmax "…"` in any terminal.
 
 It's a real OpenTUI/SolidJS plugin (not text in a tool result), so it's themed to match
 your editor and lives alongside OpenCode's own Context / MCP / LSP panels.

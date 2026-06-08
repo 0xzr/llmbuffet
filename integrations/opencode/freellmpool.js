@@ -61,6 +61,38 @@ async function getJSON(path) {
   }
 }
 
+// POST <path> with a JSON body. Like getJSON, never throws. Takes its own timeout
+// because tokenmax fans out to many models and can run far longer than a status poll.
+async function postJSON(path, body, timeoutMs = TIMEOUT_MS) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders() },
+      body: JSON.stringify(body),
+      signal: ac.signal,
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      return { ok: false, error: `non-JSON response (HTTP ${res.status})` };
+    }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || `HTTP ${res.status}`;
+      return { ok: false, error: String(msg) };
+    }
+    return { ok: true, data };
+  } catch (err) {
+    const why = err?.name === "AbortError" ? `timed out after ${timeoutMs}ms` : err?.message || String(err);
+    return { ok: false, error: `cannot reach freellmpool proxy at ${BASE_URL} (${why})` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const num = (n) => (typeof n === "number" && isFinite(n) ? n : 0);
 const pad = (s, w) => String(s).padEnd(w);
 
@@ -165,6 +197,47 @@ export const FreellmpoolPlugin = async ({ client }) => {
           const ids = (data?.data || []).map((m) => m.id).filter(Boolean);
           if (!ids.length) return "freellmpool: no models reported.";
           return `freellmpool exposes ${ids.length} models:\n` + ids.map((id) => `  ${id}`).join("\n");
+        },
+      },
+
+      freellmpool_tokenmax: {
+        description:
+          "🌈 TOKENMAX: blast the SAME prompt to EVERY free model the proxy can reach at " +
+          "once, then YOU synthesize the single best answer from all of them. While it runs, " +
+          "the freellmpool panel throbs a live rainbow TOKENMAXXING animation with N/total " +
+          "progress. Tongue-in-cheek but genuinely useful for the hardest questions where you " +
+          "want every model's take.",
+        args: {
+          prompt: tool.schema.string().describe("The prompt to blast to every model."),
+          max_models: tool.schema
+            .number()
+            .optional()
+            .describe("Cap how many models to hit (default: ALL of them)."),
+        },
+        async execute(args) {
+          if (!args?.prompt || !String(args.prompt).trim()) {
+            return "freellmpool_tokenmax: 'prompt' is required";
+          }
+          const body = { prompt: String(args.prompt) };
+          if (typeof args.max_models === "number") body.max_models = args.max_models;
+          // Long timeout: the swarm can take a couple of minutes to drain every provider.
+          const { ok, data, error } = await postJSON("/tokenmax", body, 180000);
+          if (!ok) return `freellmpool tokenmax unavailable: ${error}`;
+          const answers = Array.isArray(data.answers) ? data.answers : [];
+          const lines = [
+            `🌈 TOKENMAX — ${answers.length}/${num(data.total) || answers.length} models answered ` +
+              `across ${num(data.n_providers) || "?"} providers (rainbow throbbing live in the freellmpool panel).`,
+            "Synthesize the single best, correct answer from every response below " +
+              "(weigh agreement, discard outliers):",
+            "",
+          ];
+          for (const a of answers) lines.push(`### ${a.model}\n${a.text}\n`);
+          const failed = Array.isArray(data.failed) ? data.failed : [];
+          if (failed.length) {
+            const shown = failed.slice(0, 30).join(", ") + (failed.length > 30 ? "…" : "");
+            lines.push(`_${failed.length} unavailable: ${shown}_`);
+          }
+          return lines.join("\n");
         },
       },
     },

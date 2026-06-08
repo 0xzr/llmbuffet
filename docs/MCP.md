@@ -82,6 +82,12 @@ Pass them through the MCP server's environment, e.g. in the config:
   to shell out to the `freellmpool` CLI as a subprocess. Subprocessing captures the
   output inside the agent's process and hides `tokenmax`'s live progress, the rainbow
   banner, and the answers from the user.
+- **Want the *visible* rainbow animation?** An MCP tool can't paint a live animation in
+  the host chat (stdout is the protocol, stderr is logged, results strip ANSI) — the
+  `tokenmax` `notifications/progress` status line is the ceiling here. For a genuine
+  in-harness graphic, use the **OpenCode embedded TUI plugin** (`integrations/opencode-tui`),
+  whose panel throbs a live rainbow `TOKENMAXXING` animation; or run `freellmpool tokenmax`
+  in a real terminal for the standalone flash.
 - **Live `tokenmax` progress:** when a client passes a `progressToken` (Claude
   Code does), `tokenmax` streams `notifications/progress` as each model answers, so
   you see the swarm tick up in real time. Raw ANSI can't animate inside an MCP

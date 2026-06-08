@@ -14,6 +14,10 @@ It talks to a running [freellmpool](https://github.com/0xzr/freellmpool) proxy
   things like *"check freellmpool status"* or *"how much quota is left?"*.
 - **`freellmpool_models` tool** — lists the model ids the proxy exposes (including the
   routing aliases `auto` / `fast` / `quality` / `fair`).
+- **`freellmpool_tokenmax` tool** 🌈 — blast the same prompt to **every** free model at
+  once, then the agent synthesizes them all. Ask *"tokenmax: &lt;hard question&gt;"*. While
+  the swarm runs, the companion **embedded TUI dashboard** (`../opencode-tui`) throbs a live
+  rainbow `TOKENMAXXING` animation with `N/total` progress — install it too for the show.
 - **served-model toast** — after each reply, a small toast shows which provider+model
   actually answered. OpenCode itself only knows the alias you picked
   (`freellmpool/auto`), so the real target is read back from the proxy. Silence it with

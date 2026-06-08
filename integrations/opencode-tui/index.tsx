@@ -10,12 +10,14 @@
 // Install:  opencode plugin -g file:/path/to/integrations/opencode-tui
 // Config:   FREELLMPOOL_PROXY_URL (default http://localhost:8765)
 //
-import { createSignal, onCleanup, For, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, For, Show } from "solid-js"
 
 const PROXY = (process.env.FREELLMPOOL_PROXY_URL || "http://localhost:8765").replace(/\/+$/, "")
 const PROXY_KEY = process.env.FREELLMPOOL_PROXY_KEY || ""
 const AUTH = PROXY_KEY ? { Authorization: `Bearer ${PROXY_KEY}` } : {}
 const POLL_MS = 1500
+const POLL_MS_TOKENMAX = 300 // poll fast while a swarm is in flight, so the bar moves
+const RAINBOW = ["#ff0040", "#ff8800", "#ffdd00", "#22cc44", "#00ccff", "#3366ff", "#cc44ff"]
 
 // ── formatting helpers ───────────────────────────────────────────────────────
 const BAR = "█"
@@ -72,8 +74,11 @@ const plugin = async (api) => {
       setStatus(s)
       setDown(false)
 
-      // throughput: completion-token delta / elapsed since last sample
-      const tokens = Number(s?.pool?.completion_tokens) || 0
+      // throughput: completion-token delta / elapsed since last sample. Use the LIFETIME
+      // counter (persisted, shared across the proxy + CLI + MCP) so tok/s reflects ALL
+      // freellmpool activity, not just this proxy session — and so it's non-zero for
+      // streaming clients now that the stream path records tokens.
+      const tokens = Number(s?.lifetime?.completion_tokens) || 0
       const now = Date.now()
       if (prev && now > prev.t) {
         const dt = (now - prev.t) / 1000
@@ -97,9 +102,48 @@ const plugin = async (api) => {
       setDown(true)
     }
   }
-  poll()
-  const timer = setInterval(poll, POLL_MS)
-  onCleanup(() => clearInterval(timer))
+  // Self-scheduling poll: tick fast while a tokenmax swarm is active so the rainbow
+  // progress bar moves smoothly, otherwise fall back to the calm cadence. The `disposed`
+  // flag is essential: onCleanup can fire mid-`await poll()`, after which we must NOT
+  // reschedule (the timeout cleanup already ran) — otherwise the loop becomes a zombie
+  // poller that keeps hitting the proxy and updating disposed signals forever.
+  let pollTimer: ReturnType<typeof setTimeout>
+  let disposed = false
+  const loop = async () => {
+    await poll()
+    if (disposed) return
+    const delay = status()?.tokenmax?.active ? POLL_MS_TOKENMAX : POLL_MS
+    pollTimer = setTimeout(loop, delay)
+  }
+  loop()
+  onCleanup(() => {
+    disposed = true
+    clearTimeout(pollTimer)
+  })
+
+  // Rainbow throb: a frame counter the TOKENMAXXING banner reads to cycle colors. The
+  // banner is only mounted while a swarm is active, so this drives no renders when idle.
+  const [frame, setFrame] = createSignal(0)
+  const throb = setInterval(() => setFrame((f) => (f + 1) % 1000), 90)
+  onCleanup(() => clearInterval(throb))
+  const rainbow = () => RAINBOW[frame() % RAINBOW.length]
+
+  // Brief "✅ TOKENMAXXED" flash when a swarm finishes (active true → false).
+  const [flash, setFlash] = createSignal<string | null>(null)
+  let wasActive = false
+  let flashTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const tm = status()?.tokenmax
+    const active = !!tm?.active
+    if (wasActive && !active) {
+      const n = tm?.answered ?? tm?.total ?? 0
+      setFlash(`✅ TOKENMAXXED — ${n} models answered`)
+      clearTimeout(flashTimer)
+      flashTimer = setTimeout(() => setFlash(null), 4000)
+    }
+    wasActive = active
+  })
+  onCleanup(() => clearTimeout(flashTimer))
 
   // top providers by requests-used-today (the "race")
   const topProviders = () => {
@@ -118,6 +162,36 @@ const plugin = async (api) => {
   }
   const maxUsed = () => Math.max(1, ...topProviders().map((p: any) => p.used))
 
+  // ── 🌈 the live TOKENMAXXING banner (color-cycles while a swarm runs) ────────
+  const TokenmaxBanner = () => {
+    const theme = api.theme.current
+    const tm = () => status()?.tokenmax || {}
+    const done = () => Number(tm().done) || 0
+    const total = () => Number(tm().total) || 0
+    return (
+      <Show when={tm().active || flash()}>
+        <Show
+          when={tm().active}
+          fallback={
+            <box border borderColor={theme.success} paddingLeft={1} paddingRight={1}>
+              <text fg={theme.success}>{flash()}</text>
+            </box>
+          }
+        >
+          <box border borderColor={rainbow()} paddingLeft={1} paddingRight={1} flexDirection="column">
+            <text fg={rainbow()}>🌈 T O K E N M A X X I N G 🌈</text>
+            <box flexDirection="row" gap={1}>
+              <text fg={rainbow()}>{bar(total() ? done() / total() : 0, 16)}</text>
+              <text fg={theme.textMuted}>
+                {done()}/{total()} models · {Number(tm().n_providers) || 0} providers
+              </text>
+            </box>
+          </box>
+        </Show>
+      </Show>
+    )
+  }
+
   // ── the panel component (used by both the sidebar and the home screen) ──────
   const Panel = () => {
     const theme = api.theme.current
@@ -132,19 +206,23 @@ const plugin = async (api) => {
         }
       >
         <box border borderColor={theme.success} title=" freellmpool " paddingLeft={1} paddingRight={1} flexDirection="column">
+          <TokenmaxBanner />
           <box flexDirection="row" gap={1}>
             <text fg={theme.textMuted}>routing</text>
             <text fg={theme.accent}>{status()?.routing ?? "?"}</text>
           </box>
 
           <box flexDirection="row" gap={1}>
-            <text fg={theme.success}>💸 {money(status()?.pool?.usd_saved ?? 0)}</text>
+            <text fg={theme.success}>💸 {money(status()?.lifetime?.usd_saved ?? 0)}</text>
             <text fg={theme.textMuted}>saved</text>
             <text fg={theme.info}>⚡ {tps()} tok/s</text>
           </box>
 
           <text fg={theme.textMuted}>
-            {compact(status()?.pool?.completion_tokens ?? 0)} tokens served free · {status()?.pool?.requests ?? 0} req
+            {compact(
+              (status()?.lifetime?.prompt_tokens ?? 0) + (status()?.lifetime?.completion_tokens ?? 0),
+            )}{" "}
+            tokens served free · {status()?.lifetime?.requests ?? 0} req
           </text>
 
           <text fg={theme.textMuted}>── provider race ──</text>
@@ -191,11 +269,14 @@ const plugin = async (api) => {
         const theme = api.theme.current
         return (
           <Show when={!down()} fallback={<text fg={theme.error}>● freellmpool proxy offline</text>}>
-            <box border borderColor={theme.success} paddingLeft={1} paddingRight={1} marginTop={1} flexDirection="row" gap={1}>
-              <text fg={theme.success}>● freellmpool</text>
-              <text fg={theme.text}>
-                {money(status()?.pool?.usd_saved ?? 0)} saved · {compact(status()?.pool?.completion_tokens ?? 0)} free tokens · {tps()} tok/s · {status()?.routing ?? "?"}
-              </text>
+            <box marginTop={1} flexDirection="column">
+              <TokenmaxBanner />
+              <box border borderColor={theme.success} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1}>
+                <text fg={theme.success}>● freellmpool</text>
+                <text fg={theme.text}>
+                  {money(status()?.lifetime?.usd_saved ?? 0)} saved · {compact((status()?.lifetime?.prompt_tokens ?? 0) + (status()?.lifetime?.completion_tokens ?? 0))} free tokens · {tps()} tok/s · {status()?.routing ?? "?"}
+                </text>
+              </box>
             </box>
           </Show>
         )
