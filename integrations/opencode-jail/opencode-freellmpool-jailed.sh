@@ -165,6 +165,9 @@ cat > "$IMG_CFG/opencode.jsonc" <<JSON
   "\$schema": "https://opencode.ai/config.json",
   "model": "$MODEL",
   "small_model": "$MODEL",
+  // never self-update inside the jail (binary lives on the read-only host mount; the host
+  // owns the version). Belt-and-suspenders with OPENCODE_DISABLE_AUTOUPDATE in the env.
+  "autoupdate": false,
   // allow-all: NO approval prompts of any kind (incl. external_directory). The sandbox is
   // the real containment, so blanket-allow inside is safe.
   "permission": {
@@ -224,6 +227,7 @@ BWRAP=(
   --setenv TERM "${TERM:-xterm-256color}"
   --setenv PATH "$NODE_BIN:$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   --setenv FREELLMPOOL_PROXY_URL "$PROXY_URL"
+  --setenv OPENCODE_DISABLE_AUTOUPDATE "1"
   --setenv npm_config_prefix "$HOME/.npm-local"
   --setenv PIP_USER "1"
   --setenv PYTHONUSERBASE "$HOME/.local"
