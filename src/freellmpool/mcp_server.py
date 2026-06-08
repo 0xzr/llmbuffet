@@ -36,7 +36,7 @@ from .router import Pool
 from .tokenmax import HARD_CAP, RAINBOW_BANNER, fan_out, select_targets
 
 _DEFAULT_PROTOCOL = "2025-06-18"
-_ROUTING_MODES = ("fair", "fast", "quality", "legacy", "model", "model-fast")
+_ROUTING_MODES = ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
 _MAX_PANEL = 5
 
 # Returned in the `initialize` handshake (MCP's standard `instructions` field) so the
@@ -82,7 +82,7 @@ TOOLS = [
                 },
                 "routing": {
                     "type": "string",
-                    "enum": ["auto", "fast", "quality", "fair"],
+                    "enum": ["auto", "fast", "quality", "fair", "spread"],
                     "description": "How to pick the model: quality (best capable model for the prompt), fast (lowest latency), fair (spread quota), or auto (server default).",
                 },
                 "max_tokens": {
@@ -168,7 +168,7 @@ TOOLS = [
                 "prompt": {"type": "string", "description": "The prompt to analyze."},
                 "routing": {
                     "type": "string",
-                    "enum": ["auto", "fast", "quality", "fair"],
+                    "enum": ["auto", "fast", "quality", "fair", "spread"],
                     "description": "Routing mode to explain (default: the server's mode).",
                 },
             },

@@ -75,11 +75,12 @@ AGENTS: dict[str, dict] = {
             '      "npm": "@ai-sdk/openai-compatible",',
             f'      "options": {{ "baseURL": "{_PROXY}" }},',
             '      "models": {',
-            '        "auto": {}, "fast": {}, "quality": {}, "fair": {}',
+            '        "spread": {}, "auto": {}, "fast": {}, "quality": {}, "fair": {}',
             "      }",
             "    }",
             "  }",
-            "Pick freellmpool/{auto,fast,quality,fair} to control routing.",
+            "Pick freellmpool/{spread,auto,fast,quality,fair} to control routing.",
+            "For agentic work use freellmpool/spread — uses the whole pool, avoids 429 storms.",
         ],
         "note": (
             "Embedded dashboard + status/usage tools live in integrations/opencode "

@@ -96,6 +96,30 @@ def test_fast_mode_prefers_low_latency(providers, env, quota):
     assert order.index("beta/beta-1") < order.index("alpha/alpha-small")
 
 
+def test_spread_serves_least_used_tier_first_over_faster_busy_provider(providers, env, quota):
+    # The anti-429 property fast lacks: a heavily-used provider drops to a higher usage tier,
+    # so spread serves the least-used one first EVEN IF the busy one is faster.
+    from freellmpool.router import _SPREAD_BUCKET
+
+    for _ in range(_SPREAD_BUCKET + 1):
+        quota.record("beta", "beta-1")  # beta into a higher usage tier
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), routing="spread")
+    pool.metrics.record_success("beta/beta-1", 50.0)  # busy provider is FAST
+    pool.metrics.record_success("alpha/alpha-small", 900.0)  # least-used is SLOW
+    order = _names(pool, include=["alpha", "beta"])
+    assert order.index("alpha/alpha-small") < order.index("beta/beta-1")
+
+
+def test_spread_breaks_ties_by_latency_within_a_usage_tier(providers, env, quota):
+    # Within the same usage tier (both unused), spread prefers the faster/healthier one —
+    # the speed of fast, on top of the breadth of fair.
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), routing="spread")
+    pool.metrics.record_success("beta/beta-1", 50.0)
+    pool.metrics.record_success("alpha/alpha-small", 900.0)
+    order = _names(pool, include=["alpha", "beta"])
+    assert order.index("beta/beta-1") < order.index("alpha/alpha-small")
+
+
 def test_invalid_routing_falls_back_to_fair(providers, env, quota):
     pool = Pool(providers, quota=quota, env=env, post=make_post({}), routing="nonsense")
     assert pool.routing == "fair"

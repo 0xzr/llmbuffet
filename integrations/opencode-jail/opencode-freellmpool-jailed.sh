@@ -26,7 +26,7 @@
 #         opencode-freellmpool-jailed.sh --serve     # opencode serve (basic-auth)
 #         opencode-freellmpool-jailed.sh --selftest  # prove containment + stealth, exit
 #
-# ENV KNOBS: OPENCODE_FP_MODEL (default freellmpool/fair — spreads load across ALL providers;
+# ENV KNOBS: OPENCODE_FP_MODEL (default freellmpool/spread — full-pool breadth + fast; best agentic;
 #   models), OPENCODE_FP_PROJECT (in-jail project basename, default "project"),
 #   OPENCODE_FP_PROXY_URL, OPENCODE_FP_CPUS/MEM/DISK (default 1 / 6G / 12G),
 #   OPENCODE_FP_PORT (--serve), OPENCODE_FP_ALLOW_UNCAPPED=1 (run without the disk image —
@@ -46,9 +46,9 @@ esac
 
 # ── tunables ────────────────────────────────────────────────────────────────────────
 PROXY_URL="${OPENCODE_FP_PROXY_URL:-http://127.0.0.1:8765}"
-MODEL="${OPENCODE_FP_MODEL:-freellmpool/fair}"   # fair = least-used-first → spreads load across ALL
-                                                 # providers (best for sustained agentic loops; 'fast'
-                                                 # hammers the same few → 429 storms)
+MODEL="${OPENCODE_FP_MODEL:-freellmpool/spread}"  # spread = full-pool breadth (least-used tier first,
+                                                  # anti-429) WITH a latency/health tie-break — the best
+                                                  # mode for sustained agentic loops on free tiers
 PROJECT="${OPENCODE_FP_PROJECT:-project}"         # in-jail cwd basename — NOT "sandbox"
 PORT="${OPENCODE_FP_PORT:-4099}"
 HOSTBIND="127.0.0.1"
@@ -131,7 +131,10 @@ mkdir -p "$HOSTBASE"
 # the jail's whole life — the fd survives `exec` into bwrap, released only when the jail
 # exits. A second concurrent jail on the same image is refused.
 exec {LOCKFD}>"$HOSTBASE/.lock"
-flock -n "$LOCKFD" || { echo "ERROR: another jail is already using this sandbox image (set OPENCODE_FP_* for a separate one)." >&2; exit 6; }
+# Wait briefly (not -n/instant-fail): when a previous session is still tearing down, its
+# lock lingers for a moment — instant-fail made the jail "refuse to restart" right after
+# closing it. flock auto-releases on process death, so a real holder means a live jail.
+flock -w 15 "$LOCKFD" || { echo "ERROR: another jail is still using this sandbox image — close it first, or set OPENCODE_FP_* to run a separate one." >&2; exit 6; }
 
 if [ "$MODE" != "selftest" ]; then ensure_storage; else mkdir -p "$IMG_PROJECT" "$IMG_STATE" "$IMG_CFG" 2>/dev/null || { MNT="$HOSTBASE/uncapped"; IMG_PROJECT="$MNT/project"; IMG_STATE="$MNT/state"; IMG_CFG="$MNT/config"; mkdir -p "$IMG_PROJECT" "$IMG_STATE" "$IMG_CFG"; }; fi
 
@@ -185,6 +188,7 @@ cat > "$IMG_CFG/opencode.jsonc" <<JSON
       "name": "freellmpool (free pool)",
       "options": { "baseURL": "$PROXY_URL/v1", "apiKey": "unused" },
       "models": {
+        "spread":  { "name": "spread (all providers + fast)", "tool_call": true, "structured_output": true, "limit": { "context": 128000, "output": 8192 } },
         "auto":    { "name": "auto",    "tool_call": true, "structured_output": true, "limit": { "context": 128000, "output": 8192 } },
         "fast":    { "name": "fast",    "tool_call": true, "structured_output": true, "limit": { "context": 128000, "output": 8192 } },
         "quality": { "name": "quality", "tool_call": true, "structured_output": true, "limit": { "context": 128000, "output": 8192 } },

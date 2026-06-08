@@ -29,12 +29,17 @@ Routing is chosen by the **model name** in OpenCode's model picker — no extra 
 
 | Model | Routing |
 | --- | --- |
+| `freellmpool/spread` | **best for agentic work** — spread across the *whole* pool (least-used tier first → no provider hits its rate limit), with a latency/health tie-break so it stays fast. Use this for long, multi-step loops. |
 | `freellmpool/auto` | proxy default (whatever `FREELLMPOOL_ROUTING` is set to) |
-| `freellmpool/fast` | lowest-latency provider first |
+| `freellmpool/fast` | lowest-latency provider first (concentrates load → can rate-limit under sustained loops) |
 | `freellmpool/quality` | match the model's capability to the prompt's difficulty |
-| `freellmpool/fair` | spread load across providers (preserve quota) |
+| `freellmpool/fair` | spread load across providers (preserve quota), latency-blind |
 
-(Advanced: send an `X-Freellmpool-Routing: fast|quality|fair` header instead.)
+**For agentic coding, pick `freellmpool/spread`.** `fast` keeps hitting the same few fast providers
+every turn, so they exhaust their free-tier limits first and you get a 429 storm; `spread` rotates
+across all of them while still preferring the quick/healthy ones.
+
+(Advanced: send an `X-Freellmpool-Routing: spread|fast|quality|fair` header instead.)
 
 ## Install
 
@@ -64,6 +69,7 @@ routing aliases as models so you can pick them:
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": "http://localhost:8765/v1" },
       "models": {
+        "spread": {},
         "auto": {},
         "fast": {},
         "quality": {},

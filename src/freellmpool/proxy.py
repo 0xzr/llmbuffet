@@ -48,7 +48,7 @@ _MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
 def _model_ids(pool: Pool) -> list[str]:
     # "auto" + per-request routing aliases (mapped to a routing mode by the proxy),
     # then every enabled provider/model id.
-    ids = ["auto", "fast", "quality", "fair"]
+    ids = ["auto", "spread", "fast", "quality", "fair"]
     for provider in pool.providers:
         for m in provider.models:
             if m.enabled:
@@ -168,7 +168,7 @@ def _status_payload(pool: Pool, recent: Sequence[dict], tokenmax: dict | None = 
     }
 
 
-_ROUTING_MODES = frozenset({"fair", "fast", "quality", "legacy", "model", "model-fast"})
+_ROUTING_MODES = frozenset({"fair", "fast", "quality", "spread", "legacy", "model", "model-fast"})
 
 
 def _routing_and_model(headers, requested: str) -> tuple[str | None, str]:
@@ -178,9 +178,16 @@ def _routing_and_model(headers, requested: str) -> tuple[str | None, str]:
     model selection. Returns ``(routing_override, requested_model)``."""
     override = (headers.get("X-Freellmpool-Routing", "") or "").lower()
     override = override if override in _ROUTING_MODES else None
-    if isinstance(requested, str) and requested.lower() in _ROUTING_MODES:
-        override = override or requested.lower()
-        requested = "auto"
+    if isinstance(requested, str):
+        # accept bare or provider-qualified aliases: 'spread', 'freellmpool/spread',
+        # and 'freellmpool/auto' (opencode sends its provider name as the prefix). No real
+        # pool model is named after a routing keyword or 'auto', so the suffix check is safe.
+        alias = requested.rsplit("/", 1)[-1].lower()
+        if alias in _ROUTING_MODES:
+            override = override or alias
+            requested = "auto"
+        elif alias == "auto":
+            requested = "auto"  # 'auto' / 'freellmpool/auto' → default routing, no provider filter
     return override, requested
 
 

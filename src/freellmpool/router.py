@@ -53,6 +53,12 @@ _CTX_LIMIT_TTL = 1800.0  # seconds (30 min)
 # breaks ties among models that already clear the difficulty bar.
 _QUALITY_SLOW_S = 8.0
 _QUALITY_UNKNOWN_LAT = 0.34
+# "spread" routing groups providers into coarse usage tiers of this many requests, so the
+# least-used tier is served first (spreading load across the WHOLE pool to avoid one
+# provider hitting its rate limit), while within a tier the fastest/healthiest is preferred.
+# Small bucket => stronger spread; large => more latency-greedy. 8 balances both for
+# sustained agentic loops on free tiers.
+_SPREAD_BUCKET = 8
 
 
 def _is_health_failure(exc: Exception) -> bool:
@@ -130,7 +136,7 @@ class Pool:
         # "legacy"/"model" keep the old per-(provider, model) balancing behavior.
         self.routing = (
             routing
-            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
             else "fair"
         )
         self._on_event = on_event
@@ -192,7 +198,7 @@ class Pool:
         provider_list = list(providers) if providers else None
         eff = (
             routing
-            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
             else self.routing
         )
         difficulty = prompt_difficulty(messages) if eff == "quality" else None
@@ -362,6 +368,11 @@ class Pool:
         ``fast``: lowest measured provider latency / failure penalty first, then
         least-used provider.
 
+        ``spread``: least-used *tier* first (usage bucketed by ``_SPREAD_BUCKET``) so load
+        spreads across the WHOLE pool — no single provider hits its rate limit first — then
+        fastest/healthiest within a tier. Best for sustained agentic loops on free tiers:
+        the breadth of ``fair`` with the speed of ``fast``.
+
         ``quality``: match the request's ``difficulty`` (0–1) to each model's
         benchmark-scored capability — strong models for hard prompts, light models
         for easy ones (rationing scarce strong-model quota). Ordered globally, not
@@ -376,7 +387,7 @@ class Pool:
         metrics = self.metrics
         mode = (
             routing
-            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
             else self.routing
         )
 
@@ -447,6 +458,15 @@ class Pool:
         def target_fast_key(t: Target) -> tuple[int, float, int]:
             return (over_of(t), metrics.score(t.name), used_of(t))
 
+        def target_spread_key(t: Target) -> tuple[int, int, int, float]:
+            # least-used TIER first (spread across the whole pool), then fastest within tier.
+            return (
+                over_of(t),
+                1 if metrics.failing(t.name) else 0,
+                used_of(t) // _SPREAD_BUCKET,
+                metrics.score(t.name),
+            )
+
         if mode == "fast":
 
             def provider_fast_key(provider_id: str) -> tuple[int, float, int]:
@@ -455,6 +475,21 @@ class Pool:
 
             provider_order = sorted(by_provider, key=provider_fast_key)
             target_key = target_fast_key
+        elif mode == "spread":
+
+            def provider_spread_key(provider_id: str) -> tuple[int, int, int, float]:
+                # group providers into usage tiers (least-used tier first → load spreads
+                # across ALL providers), then prefer the fastest/healthiest within a tier.
+                stats = by_provider[provider_id]
+                return (
+                    1 if stats.all_over else 0,
+                    1 if stats.all_failing else 0,
+                    stats.used // _SPREAD_BUCKET,
+                    stats.best_score,
+                )
+
+            provider_order = sorted(by_provider, key=provider_spread_key)
+            target_key = target_spread_key
         else:
 
             def provider_fair_key(provider_id: str) -> tuple[int, int, int]:
@@ -534,7 +569,7 @@ class Pool:
         # never serves a reply produced under a different mode's intent.
         eff = (
             routing
-            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
             else self.routing
         )
         cache_key = None
@@ -721,7 +756,7 @@ class Pool:
             raise NoProvidersConfigured("no provider has an API key set")
         eff = (
             routing
-            if routing in ("fair", "fast", "quality", "legacy", "model", "model-fast")
+            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
             else self.routing
         )
         difficulty = prompt_difficulty(messages, max_tokens) if eff == "quality" else None
