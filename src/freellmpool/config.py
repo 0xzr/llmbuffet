@@ -156,6 +156,20 @@ def resolve_alias(name: str, env: dict[str, str] | None = None) -> str:
     return name
 
 
+def split_provider_model(
+    requested: str, provider_ids: set[str] | None
+) -> tuple[list[str] | None, str | None]:
+    """Split ``provider/model`` into ``([provider], model)`` — but ONLY when the prefix is a
+    real provider id. Otherwise the whole string is a model name that legitimately contains a
+    slash (OpenRouter / Hugging Face / Kilo ids like ``Qwen/Qwen3-Coder`` or
+    ``deepseek-ai/DeepSeek-R1``), so it must not be mis-split into provider ``Qwen``."""
+    if requested and provider_ids and "/" in requested:
+        prov, _, mdl = requested.partition("/")
+        if prov in provider_ids:
+            return [prov], mdl
+    return None, requested
+
+
 def known_aliases(env: dict[str, str] | None = None) -> list[str]:
     """Model aliases understood by :func:`resolve_alias`.
 

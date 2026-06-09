@@ -14,7 +14,13 @@ import os
 import sys
 
 from . import __version__
-from .config import configured_providers, load_catalog, resolve_alias, settings
+from .config import (
+    configured_providers,
+    load_catalog,
+    resolve_alias,
+    settings,
+    split_provider_model,
+)
 from .errors import AllProvidersExhausted, NoProvidersConfigured
 from .quota import QuotaStore
 from .router import Pool
@@ -45,9 +51,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
         model_filter = None
     provider_filter = args.providers.split(",") if args.providers else None
     if model_filter and "/" in model_filter:
-        prov, _, mdl = model_filter.partition("/")
-        provider_filter = [prov]
-        model_filter = mdl
+        # Only treat the prefix as a provider when it's a real provider id; otherwise keep the
+        # full slash-containing model name (e.g. huggingface/Qwen ids, openrouter :free ids).
+        prov, mdl = split_provider_model(model_filter, {p.id for p in configured_providers()})
+        if prov is not None:
+            provider_filter, model_filter = prov, mdl
 
     system = args.system
     if args.json:

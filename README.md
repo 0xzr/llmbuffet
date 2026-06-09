@@ -1,6 +1,6 @@
 # freellmpool
 
-Pool the free tiers of 17 LLM providers (200+ live-validated models) behind one
+Pool the free tiers of 18 LLM providers (200+ live-validated models) behind one
 OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
 Works with no API keys.
 
@@ -333,7 +333,7 @@ hosted free tiers — not a server you deploy, and not a paid aggregator.
 
 **Is there a free, OpenAI-compatible LLM API gateway?** Yes — freellmpool is a free,
 MIT-licensed gateway that exposes one OpenAI-compatible endpoint backed by the free
-tiers of 17 providers. `pip install freellmpool` and point any OpenAI client at the
+tiers of 18 providers. `pip install freellmpool` and point any OpenAI client at the
 local proxy.
 
 **How do I use multiple free LLM APIs at once?** freellmpool pools them: each request

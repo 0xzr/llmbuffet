@@ -81,3 +81,25 @@ def test_user_override(tmp_path):
     groq = next(p for p in catalog if p.id == "groq")
     assert groq.label == "My Groq"
     assert groq.models[0].name == "custom-model"
+
+
+def test_split_provider_model_guards_against_slash_model_names():
+    from freellmpool.config import split_provider_model
+
+    pids = {"groq", "huggingface", "kilo", "openrouter"}
+    # real provider prefix → split
+    assert split_provider_model("groq/llama-3.1-8b", pids) == (["groq"], "llama-3.1-8b")
+    # slash-bearing model on a real provider → only first slash is the provider boundary
+    assert split_provider_model("huggingface/Qwen/Qwen3-Coder-30B-A3B-Instruct", pids) == (
+        ["huggingface"],
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    )
+    # bare slash-model (no valid provider prefix) → kept whole, NOT mis-split into "Qwen"
+    assert split_provider_model("Qwen/Qwen3-Coder-30B-A3B-Instruct", pids) == (
+        None,
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    )
+    assert split_provider_model("deepseek-ai/DeepSeek-R1", pids) == (None, "deepseek-ai/DeepSeek-R1")
+    # no slash, or no provider set → unchanged
+    assert split_provider_model("gpt-4o-mini", pids) == (None, "gpt-4o-mini")
+    assert split_provider_model("groq/x", None) == (None, "groq/x")

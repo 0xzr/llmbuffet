@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 
-from .config import resolve_alias
+from .config import resolve_alias, split_provider_model
 from .router import Pool
 from .tokenmax import HARD_CAP, RAINBOW_BANNER, fan_out, select_targets
 
@@ -62,7 +62,7 @@ TOOLS = [
     {
         "name": "free_llm_ask",
         "description": (
-            "Ask a free LLM (pooled across 17 free providers, with automatic failover). "
+            "Ask a free LLM (pooled across 18 free providers, with automatic failover). "
             "Offload a self-contained subtask — drafting, summarizing, classifying, "
             "brainstorming, a quick lookup — to a free model. The reply tells you which "
             "provider/model actually served it."
@@ -235,17 +235,16 @@ def _max_tokens(value, default: int) -> int:
     return _clamp_int(value, default, 1, 8192)
 
 
-def _resolve_model(model, env) -> tuple[list[str] | None, str | None]:
-    """Resolve a model arg to (providers, model) filters, honoring aliases."""
+def _resolve_model(model, env, provider_ids=None) -> tuple[list[str] | None, str | None]:
+    """Resolve a model arg to (providers, model) filters, honoring aliases. Only splits a
+    ``provider/model`` prefix when it's a real provider id, so slash-bearing model names
+    (HF / OpenRouter / Kilo ids) aren't mis-split."""
     if not (isinstance(model, str) and model):
         return None, None
     model = resolve_alias(model, env)
     if model == "auto":
         return None, None
-    if "/" in model:
-        p, _, m = model.partition("/")
-        return [p], m
-    return None, model
+    return split_provider_model(model, provider_ids)
 
 
 def _call_tool(pool: Pool, params: dict, notify=None) -> dict:
@@ -275,7 +274,7 @@ def _tool_ask(pool: Pool, args: dict) -> dict:
         return _text("'prompt' is required", is_error=True)
     provider = args.get("provider")
     providers = [provider] if provider else None
-    p_filter, model = _resolve_model(args.get("model"), pool.env)
+    p_filter, model = _resolve_model(args.get("model"), pool.env, {p.id for p in pool.providers})
     if p_filter is not None:
         providers = p_filter
     routing = _routing_arg(args.get("routing"))

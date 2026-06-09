@@ -77,6 +77,27 @@ models = [
     { name = "nvidia/nemotron-3-super-120b-a12b:free", rpd = 0 },
 ]
 
+# Hugging Face router: OpenAI-compatible aggregator over inference providers (Fireworks,
+# Together, Novita, DeepInfra, …). Free users get ~100K Inference credits/month (recurring).
+# Models live-validated 2026-06-08; ids that route to Cerebras (gpt-oss, Llama-3.3-70B) return
+# upstream 403 here and are already pooled directly, so they're excluded.
+[[provider]]
+id = "huggingface"
+label = "Hugging Face (router)"
+adapter = "openai"
+base_url = "https://router.huggingface.co/v1"
+key_env = "HF_TOKEN"
+models = [
+    { name = "Qwen/Qwen3-Coder-30B-A3B-Instruct", rpd = 0 },
+    { name = "Qwen/Qwen3-Coder-Next", rpd = 0 },
+    { name = "Qwen/Qwen3.5-122B-A10B", rpd = 0 },
+    { name = "Qwen/Qwen3.5-35B-A3B", rpd = 0 },
+    { name = "Qwen/Qwen3-4B-Instruct-2507", rpd = 0 },
+    { name = "deepseek-ai/DeepSeek-V4-Flash", rpd = 0 },
+    { name = "deepseek-ai/DeepSeek-V4-Pro", rpd = 0 },
+    { name = "deepseek-ai/DeepSeek-R1", rpd = 0 },
+]
+
 [[provider]]
 id = "groq"
 label = "Groq"
