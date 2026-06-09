@@ -4,7 +4,7 @@
 
 A plugin for [llm](https://llm.datasette.io) that lets you run **free LLMs** through
 [freellmpool](https://github.com/0xzr/freellmpool) — which pools the free tiers of
-16 providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, Cloudflare, …) with
+17 providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, Cloudflare, …) with
 automatic failover. **It works with zero API keys** thanks to freellmpool's keyless
 providers.
 

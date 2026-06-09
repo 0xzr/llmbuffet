@@ -321,7 +321,7 @@ Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | Tool | What it is | Install | Keyless start | CLI / library / proxy / MCP |
 |---|---|---|---|---|
-| **freellmpool** | Pools many providers' **free tiers** | `pip install` | Yes (2 providers) | All four |
+| **freellmpool** | Pools many providers' **free tiers** | `pip install` | Yes (3 providers) | All four |
 | OpenRouter | Hosted paid aggregator (some free models) | API key | No | API only |
 | LiteLLM | Multi-provider SDK/proxy (bring your own keys) | `pip install` | No | Library + proxy |
 | Self-hosted free-API servers | A server you deploy | Docker + config | No | Server only |
@@ -347,7 +347,7 @@ Code, set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` so `/v1/models` is disc
 through the Anthropic bridge. See `freellmpool code <agent>`. (Claude Code path is
 experimental: text + tools, no vision.)
 
-**Do I need an API key?** No — Pollinations and OVHcloud work with no key, so a fresh
+**Do I need an API key?** No — Pollinations, OVHcloud, and Kilo Gateway work with no key, so a fresh
 install answers immediately. Add free keys for the other providers for more models and
 higher limits.
 

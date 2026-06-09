@@ -29,7 +29,7 @@
 OpenRouter, Cloudflare and more — pool them behind one endpoint so each request goes to a provider you
 have capacity on and fails over when one is rate-limited. The open-source <a
 href="https://github.com/0xzr/freellmpool">freellmpool</a> does exactly this: one OpenAI-compatible
-interface over 16 providers, with per-day quota tracking so you drain each tier evenly. Two providers are
+interface over 17 providers, with per-day quota tracking so you drain each tier evenly. Three providers are
 keyless, so you can start with no signup.</strong></p>
 
 <h2>Why combine them</h2>
@@ -69,7 +69,7 @@ per-model balancing.</p>
 each request to one you have capacity on and fails over automatically. You can also pin a provider per
 call with <code>-p</code>.</p>
 <h3>Do I need an API key for every provider?</h3>
-<p>No. Two providers are keyless so freellmpool works immediately; add keys for the others over time to
+<p>No. Three providers are keyless so freellmpool works immediately; add keys for the others over time to
 grow your total free capacity.</p>
 
 <p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Updated 2026-06-03.</p>
