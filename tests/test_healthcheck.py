@@ -35,6 +35,85 @@ def test_run_healthcheck_success():
     assert rows[0].target == "demo/model"
 
 
+def test_run_healthcheck_uses_discovered_model_when_catalog_is_stale(monkeypatch):
+    from freellmpool import benchmark
+
+    provider = Provider(
+        id="hugging_face",
+        label="Hugging Face",
+        adapter="openai",
+        base_url="https://router.huggingface.co/v1",
+        auth="none",
+        models=(Model("meta-llama/Meta-Llama-3.1-8B-Instruct"),),
+    )
+    post = make_post({})
+
+    monkeypatch.setattr(
+        benchmark,
+        "discover_openai_models",
+        lambda *args, **kwargs: ["Qwen/Qwen3-Coder-30B-A3B-Instruct"],
+    )
+
+    rows = run_healthcheck(Pool([provider], post=post), timeout=1)
+
+    assert rows[0].ok
+    assert rows[0].target == "hugging_face/Qwen/Qwen3-Coder-30B-A3B-Instruct"
+    assert post.calls[0]["body"]["model"] == "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+
+
+def test_run_healthcheck_falls_back_to_catalog_model_when_discovery_is_empty(monkeypatch):
+    from freellmpool import benchmark
+
+    provider = Provider(
+        id="demo",
+        label="Demo",
+        adapter="openai",
+        base_url="https://example.test/v1",
+        auth="none",
+        models=(Model("catalog-model"),),
+    )
+    post = make_post({})
+
+    monkeypatch.setattr(
+        benchmark,
+        "discover_openai_models",
+        lambda *args, **kwargs: [],
+    )
+
+    rows = run_healthcheck(Pool([provider], post=post), timeout=1)
+
+    assert rows[0].ok
+    assert rows[0].target == "demo/catalog-model"
+    assert post.calls[0]["body"]["model"] == "catalog-model"
+
+
+def test_run_healthcheck_does_not_post_pinned_model_missing_from_discovery(monkeypatch):
+    from freellmpool import benchmark
+
+    provider = Provider(
+        id="demo",
+        label="Demo",
+        adapter="openai",
+        base_url="https://example.test/v1",
+        auth="none",
+        models=(Model("stale"),),
+    )
+    post = make_post({})
+
+    monkeypatch.setattr(
+        benchmark,
+        "discover_openai_models",
+        lambda *args, **kwargs: ["live"],
+    )
+
+    rows = run_healthcheck(Pool([provider], post=post), model="stale", timeout=1)
+
+    assert not rows[0].ok
+    assert rows[0].target == "demo/stale"
+    assert rows[0].note == "model not listed by /models: stale"
+    assert post.calls == []
+
+
 def test_run_healthcheck_failure_and_rate_limit(monkeypatch):
     from freellmpool import healthcheck
 

@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from . import client as _client
+from .catalog import discover_openai_models
 from .errors import ProviderHTTPError
 from .router import Pool
 
@@ -41,6 +42,42 @@ def _pick_model(provider, model: str | None) -> str | None:
     return provider.models[0].name if provider.models else None
 
 
+def _pick_model_for_health(
+    provider, model: str | None, pool: Pool, timeout: float
+) -> tuple[str | None, str | None]:
+    """Pick a probe model, preferring ids currently listed by /models.
+
+    The packaged/user catalog can drift. Health checks should report real health,
+    not burn a request on a retired model when the provider exposes discovery.
+    """
+    discovered: set[str] | None = None
+    if provider.adapter == "openai":
+        try:
+            discovered = set(
+                discover_openai_models(
+                    provider.base_url,
+                    api_key=provider.api_key(pool.env),
+                    timeout=min(timeout, 10.0),
+                )
+            )
+        except ValueError:
+            discovered = None
+
+    if model:
+        if discovered is not None and model not in discovered:
+            return None, f"model not listed by /models: {model}"
+        picked = provider.model(model)
+        return (picked.name if picked else model), None
+
+    if discovered:
+        for m in provider.models:
+            if m.enabled and m.name in discovered:
+                return m.name, None
+        return sorted(discovered)[0], None
+
+    return _pick_model(provider, model), None
+
+
 def benchmark(
     pool: Pool,
     *,
@@ -55,10 +92,14 @@ def benchmark(
     fastest-first (successes), then failures."""
     include = {p.strip() for p in providers} if providers else None
     targets: list[tuple] = []
+    skipped: list[BenchRow] = []
     for p in pool.providers:
         if include is not None and p.id not in include:
             continue
-        name = _pick_model(p, model)
+        name, skip_note = _pick_model_for_health(p, model, pool, timeout)
+        if skip_note:
+            skipped.append(BenchRow(f"{p.id}/{model}", False, None, None, skip_note))
+            continue
         if name:
             targets.append((p, name))
 
@@ -92,9 +133,10 @@ def benchmark(
         return BenchRow(key, False, None, None, "empty completion")
 
     if not targets:
-        return []
+        return skipped
     with ThreadPoolExecutor(max_workers=min(workers, len(targets))) as ex:
         rows = list(ex.map(run, targets))
+    rows.extend(skipped)
     rows.sort(key=lambda r: (not r.ok, r.latency_ms if r.latency_ms is not None else 1e18))
     return rows
 
