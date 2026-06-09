@@ -91,20 +91,17 @@ def benchmark(
     """Time one call per configured provider, concurrently. Returns rows sorted
     fastest-first (successes), then failures."""
     include = {p.strip() for p in providers} if providers else None
-    targets: list[tuple] = []
-    skipped: list[BenchRow] = []
-    for p in pool.providers:
-        if include is not None and p.id not in include:
-            continue
-        name, skip_note = _pick_model_for_health(p, model, pool, timeout)
-        if skip_note:
-            skipped.append(BenchRow(f"{p.id}/{model}", False, None, None, skip_note))
-            continue
-        if name:
-            targets.append((p, name))
+    candidates = [p for p in pool.providers if include is None or p.id in include]
 
-    def run(item) -> BenchRow:
-        provider, mname = item
+    def run(provider) -> BenchRow | None:
+        # Model selection (incl. the /models discovery probe) runs INSIDE the worker so it's
+        # parallelized across the pool — not serialized before the threadpool, which would add
+        # up to N*min(timeout,10s) of preflight latency on slow endpoints.
+        mname, skip_note = _pick_model_for_health(provider, model, pool, timeout)
+        if skip_note:
+            return BenchRow(f"{provider.id}/{model}", False, None, None, skip_note)
+        if not mname:
+            return None  # nothing probeable (no catalog model and no discovery) — omit, as before
         key = f"{provider.id}/{mname}"
         started = time.monotonic()
         try:
@@ -132,11 +129,10 @@ def benchmark(
         pool.metrics.record_failure(key, "empty completion")
         return BenchRow(key, False, None, None, "empty completion")
 
-    if not targets:
-        return skipped
-    with ThreadPoolExecutor(max_workers=min(workers, len(targets))) as ex:
-        rows = list(ex.map(run, targets))
-    rows.extend(skipped)
+    if not candidates:
+        return []
+    with ThreadPoolExecutor(max_workers=min(workers, len(candidates))) as ex:
+        rows = [r for r in ex.map(run, candidates) if r is not None]
     rows.sort(key=lambda r: (not r.ok, r.latency_ms if r.latency_ms is not None else 1e18))
     return rows
 
