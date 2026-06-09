@@ -29,6 +29,8 @@ def test_transcriber_catalog_loads():
     # Catalog order IS failover/`auto` order (Pool.transcribe iterates the list). Quality-first
     # per the WER smoke test: Mistral Voxtral (most accurate) precedes Groq Whisper.
     assert ids.index("mistral") < ids.index("groq")
+    # Keyless OVHcloud Whisper is LAST = the always-available fallback after keyed providers.
+    assert ids[-1] == "ovh"
     # Within Groq, whisper-large-v3 precedes -turbo (quality-first).
     groq = next(t for t in cat if t.id == "groq")
     gm = [m.name for m in groq.models]
@@ -41,12 +43,13 @@ def test_transcriber_catalog_loads():
 def test_configured_transcribers_filter():
     cat = load_transcribers()
     got = {t.id for t in configured_transcribers(cat, {"GROQ_API_KEY": "x"})}
-    assert got == {"groq"}  # only providers whose key is set are configured
+    assert got == {"groq", "ovh"}  # groq (keyed) + ovh (keyless); mistral needs its key
     both = {
         t.id for t in configured_transcribers(cat, {"GROQ_API_KEY": "x", "MISTRAL_API_KEY": "y"})
     }
-    assert {"groq", "mistral"} <= both
-    assert configured_transcribers(cat, {}) == []  # no key → nothing configured
+    assert both == {"groq", "mistral", "ovh"}
+    # keyless-only: with no keys, only the keyless OVH transcriber is configured.
+    assert {t.id for t in configured_transcribers(cat, {})} == {"ovh"}
 
 
 def test_client_transcribe_shape():

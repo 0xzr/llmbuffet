@@ -592,6 +592,19 @@ models = [
     { name = "snowflake/arctic-embed-l", rpd = 0 },
 ]
 
+# OVHcloud — KEYLESS embeddings (BGE), no key/signup. Our only keyless embedder → works on a
+# fresh install. Live-validated 2026-06-09 (bge-m3 dim=1024, bge-multilingual-gemma2 dim=3584).
+[[embedder]]
+id = "ovh"
+label = "OVHcloud (keyless)"
+adapter = "openai"
+base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+auth = "none"
+models = [
+    { name = "bge-multilingual-gemma2", rpd = 0 },
+    { name = "bge-m3", rpd = 0 },
+]
+
 # ── transcribers: audio→text (OpenAI /audio/transcriptions shape). Failover order. ──
 # Quality-first order from a local WER smoke test (5 known-speech clips, 2026-06-08): Voxtral
 # was most accurate (WER 0.024), then whisper-large-v3 (0.070), then -turbo (0.062, fastest).
@@ -612,6 +625,19 @@ label = "Groq (Whisper)"
 adapter = "openai"
 base_url = "https://api.groq.com/openai/v1"
 key_env = "GROQ_API_KEY"
+models = [
+    { name = "whisper-large-v3", rpd = 0 },
+    { name = "whisper-large-v3-turbo", rpd = 0 },
+]
+
+# OVHcloud — KEYLESS Whisper, no key/signup; the always-available ASR fallback (anon ~2 RPM/IP).
+# Last so keyed higher-quality providers win when configured; live-validated 2026-06-09.
+[[transcriber]]
+id = "ovh"
+label = "OVHcloud (Whisper, keyless)"
+adapter = "openai"
+base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+auth = "none"
 models = [
     { name = "whisper-large-v3", rpd = 0 },
     { name = "whisper-large-v3-turbo", rpd = 0 },
