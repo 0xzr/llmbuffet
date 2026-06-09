@@ -5,10 +5,10 @@
 all of them — even **one** key gets you going. Start with Groq + Cerebras (the
 two fastest, most generous, and quickest to sign up for), then add more later.
 
-> **No keys at all?** freellmpool still works: **OVHcloud** is keyless (anonymous)
-> and **LLM7** works without a key. So `freellmpool ask "hi"` runs the moment you
-> install. The keys below just add more models, higher limits, and better
-> failover.
+> **No keys at all?** freellmpool still works: **OVHcloud**, **Kilo Gateway**, and
+> **Pollinations** are keyless (anonymous) and **LLM7** works without a key. So
+> `freellmpool ask "hi"` runs the moment you install. The keys below just add more
+> models, higher limits, and better failover.
 
 Each key takes about a minute. Once you have one, either `export` it in your
 shell or put it in a `.env` file (copy [`.env.example`](../.env.example)).
@@ -83,10 +83,14 @@ That's enough to start. Run `freellmpool ask "hello"`.
 1. <https://longcat.chat> → developer/API keys.
 2. `export LONGCAT_API_KEY=...`
 
-### OVHcloud & LLM7 — *no signup needed*
-Nothing to do — OVHcloud is anonymous and LLM7 works without a key. For higher
-LLM7 limits you can optionally grab a token at <https://token.llm7.io> and
-`export LLM7_API_KEY=...`.
+### OVHcloud, Kilo Gateway & LLM7 — *no signup needed*
+Nothing to do — OVHcloud and Kilo Gateway are anonymous, and LLM7 works without a
+key. For higher LLM7 limits you can optionally grab a token at
+<https://token.llm7.io> and `export LLM7_API_KEY=...`.
+
+**Kilo Gateway** is a keyless OpenAI-compatible aggregator of free models
+(~200 req/hour per IP). Heads up: its free routes may log prompts — don't send
+confidential data through Kilo models (`kilo/…`).
 
 ### Cloudflare Workers AI — *needs two values*
 1. Account ID: Cloudflare dashboard → **Workers & Pages** (right sidebar shows

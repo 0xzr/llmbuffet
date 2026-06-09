@@ -57,6 +57,26 @@ models = [
     { name = "Qwen3-Coder-30B-A3B-Instruct", rpd = 0 },
 ]
 
+# Kilo Gateway: keyless OpenAI-compatible aggregator of FREE models (200 req/hr per IP,
+# no key). Models carry a provider/ prefix (handled by _parse_model's first-slash split,
+# same as openrouter). Note: free routes may log prompts — don't send confidential data.
+# Model set live-validated 2026-06-08; the 550B nemotron (~128s) and nex-n2-pro (no choices)
+# were dropped as too-slow / broken.
+[[provider]]
+id = "kilo"
+label = "Kilo Gateway (keyless)"
+adapter = "openai"
+base_url = "https://api.kilo.ai/api/gateway"
+auth = "none"
+models = [
+    { name = "openrouter/free", rpd = 0 },
+    { name = "kilo-auto/free", rpd = 0 },
+    { name = "poolside/laguna-m.1:free", rpd = 0 },
+    { name = "poolside/laguna-xs.2:free", rpd = 0 },
+    { name = "stepfun/step-3.7-flash:free", rpd = 0 },
+    { name = "nvidia/nemotron-3-super-120b-a12b:free", rpd = 0 },
+]
+
 [[provider]]
 id = "groq"
 label = "Groq"
