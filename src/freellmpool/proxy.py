@@ -55,6 +55,9 @@ _TRANSCRIPTION_FORMATS = ("json", "text", "verbose_json")
 def _model_ids(pool: Pool) -> list[str]:
     # "auto" + per-request routing aliases (mapped to a routing mode by the proxy),
     # then every enabled provider/model id.
+    # INVARIANT: always non-empty (the routing aliases are unconditional). _anthropic_models_payload
+    # relies on this for first_id/last_id = ids[0]/ids[-1] without a guard — keep these seeds
+    # unconditional, or restore that guard.
     ids = ["auto", "spread", "fast", "quality", "fair"]
     for provider in pool.providers:
         for m in provider.models:
