@@ -33,10 +33,10 @@ import time
 
 from .config import resolve_alias, split_provider_model
 from .router import Pool
+from .routing_modes import routing_override
 from .tokenmax import HARD_CAP, RAINBOW_BANNER, fan_out, select_targets
 
 _DEFAULT_PROTOCOL = "2025-06-18"
-_ROUTING_MODES = ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
 _MAX_PANEL = 5
 
 # Returned in the `initialize` handshake (MCP's standard `instructions` field) so the
@@ -213,7 +213,7 @@ def _text(text: str, is_error: bool = False) -> dict:
 
 def _routing_arg(value) -> str | None:
     """Map the tool's routing arg to a pool routing override (auto/unknown -> None)."""
-    return value if isinstance(value, str) and value in _ROUTING_MODES else None
+    return routing_override(value)
 
 
 def _messages(system, prompt: str) -> list[dict[str, str]]:
@@ -568,30 +568,35 @@ def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
         except Exception:  # noqa: BLE001
             pass
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            emit(_error(None, -32700, "parse error: invalid JSON"))
-            continue
-        if isinstance(msg, list):  # JSON-RPC batch
-            if not msg:
-                emit(_error(None, -32600, "invalid request: empty batch"))
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
                 continue
-            responses = [
-                r
-                for r in (
-                    handle_message(pool, m, version=version, send_notification=send_notification)
-                    for m in msg
-                )
-                if r
-            ]
-            # JSON-RPC 2.0: a batch gets a single response that is an array of the
-            # individual responses (omitting notifications). All-notifications → no reply.
-            if responses:
-                write_obj(responses)
-            continue
-        emit(handle_message(pool, msg, version=version, send_notification=send_notification))
+            try:
+                msg = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                emit(_error(None, -32700, "parse error: invalid JSON"))
+                continue
+            if isinstance(msg, list):  # JSON-RPC batch
+                if not msg:
+                    emit(_error(None, -32600, "invalid request: empty batch"))
+                    continue
+                responses = [
+                    r
+                    for r in (
+                        handle_message(
+                            pool, m, version=version, send_notification=send_notification
+                        )
+                        for m in msg
+                    )
+                    if r
+                ]
+                # JSON-RPC 2.0: a batch gets a single response that is an array of the
+                # individual responses (omitting notifications). All-notifications → no reply.
+                if responses:
+                    write_obj(responses)
+                continue
+            emit(handle_message(pool, msg, version=version, send_notification=send_notification))
+    finally:
+        pool.quota.flush()

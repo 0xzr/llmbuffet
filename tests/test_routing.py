@@ -326,3 +326,19 @@ def test_chat_routing_override_end_to_end(tmp_path, monkeypatch, quota):
     # a per-call routing="quality" still sends the hard prompt to the strong model
     assert pool.chat(_HARD, routing="quality").model == "big"
     assert pool.routing == "fast"  # default untouched
+
+
+def test_achat_routing_override_end_to_end(tmp_path, monkeypatch, quota):
+    import asyncio
+
+    from freellmpool.aio import AsyncPool
+
+    pool = _qpool(tmp_path, monkeypatch, quota)
+    pool.routing = "fast"
+
+    async def apost(url, headers, body, timeout):
+        return pool._post(url, headers, body, timeout)
+
+    apool = AsyncPool(pool, apost=apost)
+    assert asyncio.run(apool.achat(_HARD, routing="quality")).model == "big"
+    assert pool.routing == "fast"

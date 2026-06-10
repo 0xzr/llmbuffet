@@ -707,6 +707,52 @@ def _in_table(name: str, table) -> bool:
     return normalize_model_name(name) in table
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from .cache import default_cache_path, default_max_entries
+    from .catalog import default_external_catalog_path, load_external_catalog
+    from .catalog_validation import validate_catalog
+    from .key_inventory import default_config_path
+
+    env = os.environ
+    catalog = load_catalog()
+    configured = configured_providers(catalog, env)
+    pool = Pool.from_default_config()
+    quota_path = pool.quota.path
+    cache_path = default_cache_path()
+    external_path = default_external_catalog_path()
+    external = load_external_catalog(external_path)
+    external_note = "missing"
+    if external_path.exists():
+        import time
+
+        age_hours = max(0.0, (time.time() - external_path.stat().st_mtime) / 3600.0)
+        external_note = f"{age_hours:.1f}h old"
+        if age_hours > 24 * 7:
+            external_note += ", stale"
+    errors = validate_catalog()
+
+    print(f"freellmpool {__version__}")
+    print(f"python: {sys.version.split()[0]}")
+    print(f"config: {default_config_path()}")
+    print(f"providers: {len(configured)}/{len(catalog)} configured")
+    print(f"routing: {pool.routing}")
+    print(f"quota: {quota_path} ({'exists' if quota_path.exists() else 'new'})")
+    print(f"cache: {cache_path} ttl={env.get('FREELLMPOOL_CACHE_TTL', '0')} max={default_max_entries()}")
+    print(
+        f"external catalog: {external_path} "
+        f"({len(external)} cached provider{'s' if len(external) != 1 else ''}, {external_note})"
+    )
+    if errors:
+        print("catalog: FAIL")
+        for error in errors[:20]:
+            print(f"  - {error}")
+        if len(errors) > 20:
+            print(f"  ... {len(errors) - 20} more")
+        return 1
+    print("catalog: ok")
+    return 0
+
+
 def cmd_proxy(args: argparse.Namespace) -> int:
     from .proxy import serve  # lazy: avoids http.server import on other paths
 
@@ -756,6 +802,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     finally:
+        pool.quota.flush()
         httpd.server_close()
     return 0
 
@@ -788,6 +835,8 @@ def cmd_mcp(args: argparse.Namespace) -> int:
         serve_stdio(pool, version=__version__)
     except (KeyboardInterrupt, BrokenPipeError):
         pass
+    finally:
+        pool.quota.flush()
     return 0
 
 
@@ -967,6 +1016,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("-p", "--providers", help="comma-separated provider ids to test")
     p_bench.add_argument("--timeout", type=float, default=30.0, help="per-call timeout seconds")
     p_bench.set_defaults(func=cmd_benchmark)
+
+    p_doctor = sub.add_parser("doctor", help="show local diagnostics without calling providers")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_proxy = sub.add_parser("proxy", help="run the OpenAI-compatible proxy server")
     p_proxy.add_argument("--host", default="127.0.0.1")

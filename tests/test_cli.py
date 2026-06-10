@@ -58,6 +58,21 @@ def test_cli_capacity_status_smoke(monkeypatch, capsys):
     assert "LLM capacity:" in out
 
 
+def test_cli_doctor_smoke(tmp_path, monkeypatch, capsys):
+    from freellmpool.cli import main
+
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("FREELLMPOOL_QUOTA_PATH", str(tmp_path / "quota.json"))
+    monkeypatch.setenv("FREELLMPOOL_CACHE_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setenv("FREELLMPOOL_EXTERNAL_CATALOG_PATH", str(tmp_path / "external.json"))
+
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "freellmpool" in out
+    assert "providers:" in out
+    assert "catalog: ok" in out
+
+
 def test_cli_keys_checklist_smoke(monkeypatch, capsys):
     from freellmpool.cli import main
 

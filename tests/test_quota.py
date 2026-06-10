@@ -58,3 +58,38 @@ def test_record_merges_concurrent_external_writes(tmp_path):
     assert b.snapshot() == {"groq::m": 1, "cerebras::n": 1}
     # and A sees B's write after a reload
     assert a.snapshot() == {"groq::m": 1, "cerebras::n": 1}
+
+
+def test_batched_record_flushes_on_threshold(tmp_path):
+    s = QuotaStore(
+        path=tmp_path / "q.json",
+        clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC),
+        flush_every=3,
+    )
+    assert s.record("groq", "m") == 1
+    assert not (tmp_path / "q.json").exists()
+    assert s.record("groq", "m") == 2
+    assert not (tmp_path / "q.json").exists()
+    assert s.record("groq", "m") == 3
+    assert _store(tmp_path, 2).used("groq", "m") == 3
+
+
+def test_batched_flush_merges_external_writes(tmp_path):
+    a = QuotaStore(
+        path=tmp_path / "q.json",
+        clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC),
+        flush_every=10,
+    )
+    b = _store(tmp_path, 2)
+    a.record("groq", "m")
+    b.record("cerebras", "n")
+    a.flush()
+    assert _store(tmp_path, 2).snapshot() == {"groq::m": 1, "cerebras::n": 1}
+
+
+def test_malformed_quota_file_recovers_on_record(tmp_path):
+    path = tmp_path / "q.json"
+    path.write_text("{not valid json", encoding="utf-8")
+    s = QuotaStore(path=path, clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC))
+    assert s.record("groq", "m") == 1
+    assert _store(tmp_path, 2).snapshot() == {"groq::m": 1}

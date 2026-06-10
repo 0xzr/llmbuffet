@@ -39,6 +39,7 @@ from .errors import (
 from .models import Provider, Reply
 from .observe import emit
 from .router import Pool, _is_health_failure
+from .routing_modes import normalize_routing_mode
 
 #: An async transport: ``await apost(url, headers, json_body, timeout) -> HTTPResult``.
 AsyncPostFn = Callable[[str, dict, dict, float], Awaitable["_client.HTTPResult"]]
@@ -127,17 +128,33 @@ class AsyncPool:
         import httpx
 
         client = await self._client_obj()
-        resp = await client.post(
-            url,
-            headers=headers,
-            json=body,
-            timeout=httpx.Timeout(timeout, connect=min(_CONNECT_TIMEOUT, timeout)),
-        )
-        try:
-            data = resp.json()
-        except Exception:  # noqa: BLE001 — non-JSON error bodies
-            data = {}
-        return _client.HTTPResult(status=resp.status_code, body=data, text=resp.text)
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(_client._MAX_TRANSPORT_ATTEMPTS):
+            try:
+                resp = await client.post(
+                    url,
+                    headers=headers,
+                    json=body,
+                    timeout=httpx.Timeout(timeout, connect=min(_CONNECT_TIMEOUT, timeout)),
+                )
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt + 1 >= _client._MAX_TRANSPORT_ATTEMPTS:
+                    raise
+                await asyncio.sleep(_client._RETRY_BACKOFF_S * (attempt + 1))
+                continue
+            try:
+                data = resp.json()
+            except Exception:  # noqa: BLE001 — non-JSON error bodies
+                data = {}
+            result = _client.HTTPResult(status=resp.status_code, body=data, text=resp.text)
+            if _retryable(result.status) and attempt + 1 < _client._MAX_TRANSPORT_ATTEMPTS:
+                await asyncio.sleep(_client._RETRY_BACKOFF_S * (attempt + 1))
+                continue
+            return result
+        if last_exc is not None:  # pragma: no cover - loop structure guard
+            raise last_exc
+        raise ProviderHTTPError(502, "transport retry loop exhausted", retryable=True)
 
     # ---- per-target async dispatch -----------------------------------
     async def _acall(
@@ -313,12 +330,14 @@ class AsyncPool:
         timeout: float = 90.0,
         tools: list | None = None,
         tool_choice=None,
+        routing: str | None = None,
     ) -> Reply:
         """Async failover completion — same routing/cache/metrics as :meth:`Pool.chat`."""
         p = self._pool
         if not p.providers:
             raise NoProvidersConfigured("no provider has an API key set")
         provider_list = list(providers) if providers else None
+        eff = normalize_routing_mode(routing, p.routing)
 
         cache_key = None
         if p._cache is not None:
@@ -330,10 +349,11 @@ class AsyncPool:
                 temperature,
                 tools,
                 tool_choice,
-                p.routing,
+                eff,
             )
             hit = await asyncio.to_thread(p._cache.get, cache_key)  # blocking sqlite off-loop
             if hit is not None:
+                emit(p._on_event, "cache_hit", key=cache_key)
                 p._bump_stats(cache_hits=1)
                 return Reply(
                     text=hit.get("text", ""),
@@ -345,12 +365,11 @@ class AsyncPool:
                     message=hit.get("message"),
                     cached=True,
                 )
+            emit(p._on_event, "cache_miss", key=cache_key)
 
-        difficulty = (
-            prompt_difficulty(messages, max_tokens, tools) if p.routing == "quality" else None
-        )
+        difficulty = prompt_difficulty(messages, max_tokens, tools) if eff == "quality" else None
         targets = p._order(
-            p._all_targets(include=provider_list, model=model), difficulty=difficulty
+            p._all_targets(include=provider_list, model=model), difficulty=difficulty, routing=eff
         )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
@@ -463,6 +482,7 @@ class AsyncPool:
                         "message": reply.message,
                     },
                 )
+                emit(p._on_event, "cache_store", key=cache_key, target=target.name)
             return reply
 
         emit(p._on_event, "exhausted", attempts=len(attempts))

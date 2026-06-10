@@ -24,6 +24,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Lint
-        run: ruff check src tests
+        run: ruff check .
+      - name: Validate catalog
+        run: python scripts/validate_catalog.py
+      - name: Import smoke
+        run: python -c "import freellmpool; from freellmpool import Pool, AsyncPool; print(freellmpool.__version__, Pool, AsyncPool)"
       - name: Test
-        run: pytest
+        run: pytest --cov=freellmpool --cov-report=term-missing

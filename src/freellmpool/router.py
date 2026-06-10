@@ -46,6 +46,7 @@ from .metrics import Metrics, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
 from .quota import QuotaStore
+from .routing_modes import normalize_routing_mode
 from .stats import StatsStore
 
 # A parsed "context limit" below this is treated as garbled/implausible and not
@@ -131,6 +132,28 @@ class Pool:
         stats_store: StatsStore | None = None,
     ):
         self.providers = providers
+        targets: list[Target] = []
+        enabled_targets: list[Target] = []
+        targets_by_provider: dict[str, list[Target]] = {}
+        enabled_by_provider: dict[str, list[Target]] = {}
+        targets_by_model: dict[str, list[Target]] = {}
+        enabled_by_model: dict[str, list[Target]] = {}
+        for provider in providers:
+            for model_obj in provider.models:
+                target = Target(provider, model_obj.name, model_obj.rpd, model_obj.context)
+                targets.append(target)
+                targets_by_provider.setdefault(provider.id, []).append(target)
+                targets_by_model.setdefault(model_obj.name, []).append(target)
+                if model_obj.enabled:
+                    enabled_targets.append(target)
+                    enabled_by_provider.setdefault(provider.id, []).append(target)
+                    enabled_by_model.setdefault(model_obj.name, []).append(target)
+        self._targets = tuple(targets)
+        self._enabled_targets = tuple(enabled_targets)
+        self._targets_by_provider = {k: tuple(v) for k, v in targets_by_provider.items()}
+        self._enabled_targets_by_provider = {k: tuple(v) for k, v in enabled_by_provider.items()}
+        self._targets_by_model = {k: tuple(v) for k, v in targets_by_model.items()}
+        self._enabled_targets_by_model = {k: tuple(v) for k, v in enabled_by_model.items()}
         self.embedders = embedders or []
         self.transcribers = transcribers or []
         self._transcribe_post = transcribe_post
@@ -147,11 +170,7 @@ class Pool:
         # "quality"— match prompt difficulty to model capability (benchmark-scored),
         #            so hard prompts get strong models and easy ones get light ones.
         # "legacy"/"model" keep the old per-(provider, model) balancing behavior.
-        self.routing = (
-            routing
-            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
-            else "fair"
-        )
+        self.routing = normalize_routing_mode(routing)
         self._on_event = on_event
         # provider_id -> monotonic time until which to deprioritize after a 429
         self._cooldown_until: dict[str, float] = {}
@@ -209,16 +228,12 @@ class Pool:
         explainer and multi-model panel (which fan out across the top targets) without
         re-implementing routing. Read-only — does not call any provider."""
         provider_list = list(providers) if providers else None
-        eff = (
-            routing
-            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
-            else self.routing
-        )
+        eff = normalize_routing_mode(routing, self.routing)
         difficulty = prompt_difficulty(messages) if eff == "quality" else None
         return self._order(
             self._all_targets(include=provider_list, model=model),
             difficulty=difficulty,
-            routing=routing,
+            routing=eff,
         )
 
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
@@ -404,19 +419,10 @@ class Pool:
         model: str | None = None,
     ) -> list[Target]:
         include_set = {p.strip() for p in include} if include else None
-        targets: list[Target] = []
-        for provider in self.providers:
-            if include_set is not None and provider.id not in include_set:
-                continue
-            for m in provider.models:
-                if model is not None:
-                    if m.name != model:
-                        continue
-                    # explicit model pin: allow it even if disabled by default
-                elif not m.enabled:
-                    continue  # auto routing skips off-by-default models
-                targets.append(Target(provider, m.name, m.rpd, m.context))
-        return targets
+        source = self._targets_by_model.get(model, ()) if model is not None else self._enabled_targets
+        if include_set is None:
+            return list(source)
+        return [target for target in source if target.provider.id in include_set]
 
     def _order(
         self, targets: list[Target], difficulty: float | None = None, routing: str | None = None
@@ -449,11 +455,7 @@ class Pool:
         snap = self.quota.snapshot()
         metrics = self.metrics
         msnap = metrics.snapshot()
-        mode = (
-            routing
-            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
-            else self.routing
-        )
+        mode = normalize_routing_mode(routing, self.routing)
 
         def used_of(t: Target) -> int:
             return int(snap.get(f"{t.provider.id}::{t.model}", 0))
@@ -639,11 +641,7 @@ class Pool:
         # Resolve the effective routing mode *before* the cache key so that a
         # per-request override (fast/quality/fair/…) keys its own cache bucket and
         # never serves a reply produced under a different mode's intent.
-        eff = (
-            routing
-            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
-            else self.routing
-        )
+        eff = normalize_routing_mode(routing, self.routing)
         cache_key = None
         if self._cache is not None:
             cache_key = self._cache.make_key(
@@ -651,6 +649,7 @@ class Pool:
             )
             hit = self._cache.get(cache_key)
             if hit is not None:
+                emit(self._on_event, "cache_hit", key=cache_key)
                 self._bump_stats(cache_hits=1)
                 return Reply(
                     text=hit.get("text", ""),
@@ -662,12 +661,13 @@ class Pool:
                     message=hit.get("message"),
                     cached=True,
                 )
+            emit(self._on_event, "cache_miss", key=cache_key)
 
         difficulty = prompt_difficulty(messages, max_tokens, tools) if eff == "quality" else None
         targets = self._order(
             self._all_targets(include=provider_list, model=model),
             difficulty=difficulty,
-            routing=routing,
+            routing=eff,
         )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
@@ -795,6 +795,7 @@ class Pool:
                         "message": reply.message,
                     },
                 )
+                emit(self._on_event, "cache_store", key=cache_key, target=target.name)
             return reply
 
         emit(self._on_event, "exhausted", attempts=len(attempts))
@@ -826,16 +827,12 @@ class Pool:
         """
         if not self.providers:
             raise NoProvidersConfigured("no provider has an API key set")
-        eff = (
-            routing
-            if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
-            else self.routing
-        )
+        eff = normalize_routing_mode(routing, self.routing)
         difficulty = prompt_difficulty(messages, max_tokens) if eff == "quality" else None
         targets = self._order(
             self._all_targets(include=providers, model=model),
             difficulty=difficulty,
-            routing=routing,
+            routing=eff,
         )
         targets = [t for t in targets if t.provider.adapter != "gemini"]
         if not targets:

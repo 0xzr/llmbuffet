@@ -40,11 +40,28 @@ def default_quota_path() -> Path:
 class QuotaStore:
     """A small JSON-backed counter keyed by (day, provider_id, model)."""
 
-    def __init__(self, path: Path | None = None, clock: Callable[[], datetime] | None = None):
+    def __init__(
+        self,
+        path: Path | None = None,
+        clock: Callable[[], datetime] | None = None,
+        flush_every: int | None = None,
+    ):
         self.path = path or default_quota_path()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.Lock()  # the proxy is threaded; guard read-modify-write
+        if flush_every is None:
+            try:
+                flush_every = int(os.environ.get("FREELLMPOOL_QUOTA_FLUSH_EVERY", "1"))
+            except ValueError:
+                flush_every = 1
+        self.flush_every = max(1, flush_every)
+        self._pending_counts: dict[str, dict[str, int]] = {}
+        self._pending_ops = 0
         self._data: dict = self._load()
+        if self.flush_every > 1:
+            import atexit
+
+            atexit.register(self.flush)
 
     def _load(self) -> dict:
         try:
@@ -105,7 +122,24 @@ class QuotaStore:
             return int(self._today().get(self._key(provider_id, model), 0))
 
     def record(self, provider_id: str, model: str, n: int = 1) -> int:
-        with self._lock, self._file_lock():
+        with self._lock:
+            if self.flush_every <= 1:
+                return self._record_and_save_locked(provider_id, model, n)
+
+            day = _utc_day(self._clock())
+            bucket = self._today()
+            key = self._key(provider_id, model)
+            bucket[key] = int(bucket.get(key, 0)) + n
+            self._pending_counts.setdefault(day, {})
+            self._pending_counts[day][key] = int(self._pending_counts[day].get(key, 0)) + n
+            self._pending_ops += 1
+            count = bucket[key]
+            if self._pending_ops >= self.flush_every:
+                self._flush_locked()
+            return count
+
+    def _record_and_save_locked(self, provider_id: str, model: str, n: int) -> int:
+        with self._file_lock():
             # Reload under the lock so concurrent processes' increments survive
             # (we'd otherwise write a stale whole-file snapshot over theirs).
             self._data = self._load()
@@ -121,6 +155,36 @@ class QuotaStore:
                 pass
             return count
 
+    def flush(self) -> None:
+        """Persist any locally batched quota increments."""
+        with self._lock:
+            self._flush_locked()
+
+    def _flush_locked(self) -> None:
+        if not self._pending_counts:
+            return
+        current_day = _utc_day(self._clock())
+        with self._file_lock():
+            merged = self._load()
+            bucket = merged.get(current_day)
+            if bucket is None:
+                merged = {current_day: {}}
+                bucket = merged[current_day]
+            for day, changes in self._pending_counts.items():
+                if day != current_day:
+                    continue
+                for key, amount in changes.items():
+                    bucket[key] = int(bucket.get(key, 0)) + amount
+            old_data = self._data
+            self._data = merged
+            try:
+                self._save()
+            except OSError:
+                self._data = old_data
+                return
+            self._pending_counts.clear()
+            self._pending_ops = 0
+
     def over_budget(self, provider_id: str, model: str, rpd: int) -> bool:
         """True if a positive rpd hint exists and today's use meets/exceeds it."""
         if rpd <= 0:
@@ -133,5 +197,11 @@ class QuotaStore:
         Reloads from disk (a cheap, atomic os.replace target) so a long-running
         proxy reflects increments other processes have made."""
         with self._lock:
-            self._data = self._load()
-            return dict(self._today())
+            self._flush_locked()
+            current_day = _utc_day(self._clock())
+            loaded = self._load()
+            bucket = dict(loaded.get(current_day, {}))
+            for key, amount in self._pending_counts.get(current_day, {}).items():
+                bucket[key] = int(bucket.get(key, 0)) + amount
+            self._data = {current_day: bucket}
+            return bucket

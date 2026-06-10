@@ -6,6 +6,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from helpers import gemini_body, make_post, make_stream_post
@@ -44,6 +45,43 @@ def test_chat_completions_shape(server):
     assert body["object"] == "chat.completion"
     assert body["choices"][0]["message"]["content"] == "ok"
     assert "x_freellmpool" in body
+
+
+def test_concurrent_chat_requests_share_pool_safely(providers, env, quota):
+    post = make_post({})
+    pool = Pool(providers, quota=quota, env=env, post=post, stream_post=make_stream_post({}))
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            results = list(
+                ex.map(
+                    lambda _: _post_json(
+                        base + "/v1/chat/completions",
+                        {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+                    ),
+                    range(16),
+                )
+            )
+        assert all(status == 200 for status, _body in results)
+        assert pool.stats["requests"] == 16
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_server_close_flushes_batched_quota(providers, env, tmp_path):
+    from freellmpool.quota import QuotaStore
+
+    quota = QuotaStore(path=tmp_path / "quota.json", flush_every=100)
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}))
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    pool.ask("hi", providers=["alpha"])
+    assert not (tmp_path / "quota.json").exists()
+    httpd.server_close()
+    assert QuotaStore(path=tmp_path / "quota.json").snapshot()
 
 
 def test_models_route(server):

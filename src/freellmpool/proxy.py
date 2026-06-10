@@ -41,6 +41,7 @@ from .errors import (
     NoProvidersConfigured,
 )
 from .router import Pool
+from .routing_modes import PUBLIC_ROUTING_ALIASES, routing_override
 from .savings import usd_saved
 
 _MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
@@ -58,7 +59,7 @@ def _model_ids(pool: Pool) -> list[str]:
     # INVARIANT: always non-empty (the routing aliases are unconditional). _anthropic_models_payload
     # relies on this for first_id/last_id = ids[0]/ids[-1] without a guard — keep these seeds
     # unconditional, or restore that guard.
-    ids = ["auto", "spread", "fast", "quality", "fair"]
+    ids = list(PUBLIC_ROUTING_ALIASES)
     for provider in pool.providers:
         for m in provider.models:
             if m.enabled:
@@ -178,23 +179,20 @@ def _status_payload(pool: Pool, recent: Sequence[dict], tokenmax: dict | None = 
     }
 
 
-_ROUTING_MODES = frozenset({"fair", "fast", "quality", "spread", "legacy", "model", "model-fast"})
-
-
 def _routing_and_model(headers, requested: str) -> tuple[str | None, str]:
     """Resolve a per-request routing override. A valid mode in the
     ``X-Freellmpool-Routing`` header, or the model name itself being a routing
     keyword (e.g. ``fast``/``quality``), selects that mode and falls back to ``auto``
     model selection. Returns ``(routing_override, requested_model)``."""
-    override = (headers.get("X-Freellmpool-Routing", "") or "").lower()
-    override = override if override in _ROUTING_MODES else None
+    override = routing_override(headers.get("X-Freellmpool-Routing"))
     if isinstance(requested, str):
         # accept bare or provider-qualified aliases: 'spread', 'freellmpool/spread',
         # and 'freellmpool/auto' (opencode sends its provider name as the prefix). No real
         # pool model is named after a routing keyword or 'auto', so the suffix check is safe.
         alias = requested.rsplit("/", 1)[-1].lower()
-        if alias in _ROUTING_MODES:
-            override = override or alias
+        alias_override = routing_override(alias)
+        if alias_override is not None:
+            override = override or alias_override
             requested = "auto"
         elif alias == "auto":
             requested = "auto"  # 'auto' / 'freellmpool/auto' → default routing, no provider filter
@@ -1255,6 +1253,7 @@ def serve(
         api_key = os.environ.get("FREELLMPOOL_PROXY_KEY") or None
     handler = make_handler(pool, api_key)
     httpd = _BoundedThreadingHTTPServer((host, port), handler)
+    httpd.pool = pool
     # Worker threads are daemons so a stuck request can't block process/server
     # shutdown (Ctrl-C, container stop).
     httpd.daemon_threads = True
@@ -1274,6 +1273,12 @@ class _BoundedThreadingHTTPServer(ThreadingHTTPServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._slots = threading.BoundedSemaphore(_MAX_CONNECTIONS)
+
+    def server_close(self) -> None:
+        pool = getattr(self, "pool", None)
+        if pool is not None:
+            pool.quota.flush()
+        super().server_close()
 
     def process_request(self, request, client_address):
         if not self._slots.acquire(blocking=False):

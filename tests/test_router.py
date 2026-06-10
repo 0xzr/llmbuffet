@@ -227,6 +227,32 @@ def test_disabled_model_skipped_by_auto_but_reachable_explicitly(env, quota):
     assert pool.ask("hi", model="off-model").model == "off-model"
 
 
+def test_all_targets_uses_indexed_filters(env, quota):
+    from freellmpool.models import Model, Provider
+
+    a = Provider(
+        id="a",
+        label="A",
+        adapter="openai",
+        base_url="https://a.test/v1",
+        auth="none",
+        models=(Model("shared"), Model("off", enabled=False)),
+    )
+    b = Provider(
+        id="b",
+        label="B",
+        adapter="openai",
+        base_url="https://b.test/v1",
+        auth="none",
+        models=(Model("shared"),),
+    )
+    pool = Pool([a, b], quota=quota, env=env, post=make_post({}))
+
+    assert [t.name for t in pool._all_targets()] == ["a/shared", "b/shared"]
+    assert [t.name for t in pool._all_targets(model="off")] == ["a/off"]
+    assert [t.name for t in pool._all_targets(include=["b"], model="shared")] == ["b/shared"]
+
+
 def test_tool_calls_reply_is_success(providers, env, quota):
     tc = [{"id": "c", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
     post = make_post(

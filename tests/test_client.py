@@ -177,6 +177,61 @@ def test_timeout_has_fast_connect():
     assert C._timeout(3.0).connect == 3.0  # connect never exceeds the overall timeout
 
 
+class _CM:
+    def __init__(self, resp):
+        self.resp = resp
+
+    def __enter__(self):
+        return self.resp
+
+    def __exit__(self, *args):
+        return False
+
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status_code = status
+        self._raw = json.dumps(body).encode()
+
+    def iter_bytes(self):
+        yield self._raw
+
+
+def test_default_post_retries_retryable_status(monkeypatch):
+    calls = []
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            status = 503 if len(calls) == 1 else 200
+            return _CM(_Resp(status, openai_body("ok")))
+
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    monkeypatch.setattr(C, "_RETRY_BACKOFF_S", 0.0)
+    result = C.default_post("https://x.test/v1", {}, {}, 30.0)
+    assert result.status == 200
+    assert len(calls) == 2
+
+
+def test_default_post_retries_transport_error(monkeypatch):
+    import httpx
+
+    calls = []
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise httpx.ConnectError("temporary")
+            return _CM(_Resp(200, openai_body("ok")))
+
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    monkeypatch.setattr(C, "_RETRY_BACKOFF_S", 0.0)
+    result = C.default_post("https://x.test/v1", {}, {}, 30.0)
+    assert result.status == 200
+    assert len(calls) == 2
+
+
 def test_client_singleton_under_concurrency():
     import threading as _t
 

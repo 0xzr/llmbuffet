@@ -27,24 +27,41 @@ def default_cache_path() -> Path:
     return Path.home() / ".config" / "freellmpool" / "cache.db"
 
 
+def default_max_entries() -> int:
+    try:
+        return max(0, int(os.environ.get("FREELLMPOOL_CACHE_MAX_ENTRIES", "10000")))
+    except ValueError:
+        return 10000
+
+
 class Cache:
     def __init__(
-        self, ttl: float, path: Path | None = None, clock: Callable[[], float] | None = None
+        self,
+        ttl: float,
+        path: Path | None = None,
+        clock: Callable[[], float] | None = None,
+        max_entries: int | None = None,
     ):
         self.ttl = ttl
         self.path = path or default_cache_path()
         self._clock = clock or time.time
+        self.max_entries = default_max_entries() if max_entries is None else max(0, max_entries)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # `with sqlite3.connect()` manages the transaction but NOT the connection,
         # so every call must also close() it (via contextlib.closing) or it leaks a
         # file handle until GC. `, con` keeps the transaction-commit behavior.
         with closing(self._conn()) as con, con:
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("PRAGMA busy_timeout=5000")
             con.execute(
                 "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT, created REAL)"
             )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_cache_created ON cache(created)")
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path, timeout=5)
+        con = sqlite3.connect(self.path, timeout=5)
+        con.execute("PRAGMA busy_timeout=5000")
+        return con
 
     @staticmethod
     def make_key(
@@ -102,5 +119,15 @@ class Cache:
                 )
                 # Reclaim expired rows on write so the table can't grow without bound.
                 con.execute("DELETE FROM cache WHERE created < ?", (now - self.ttl,))
+                if self.max_entries:
+                    con.execute(
+                        """
+                        DELETE FROM cache
+                        WHERE key NOT IN (
+                            SELECT key FROM cache ORDER BY created DESC LIMIT ?
+                        )
+                        """,
+                        (self.max_entries,),
+                    )
         except (sqlite3.Error, TypeError):
             pass  # cache is best-effort — never break a request over it

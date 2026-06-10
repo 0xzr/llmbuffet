@@ -179,8 +179,8 @@ async with AsyncPool.from_default_config() as pool:
     reply = await pool.aask("Summarize the plot of Hamlet in 20 words.")
 ```
 
-Pass `on_event=...` to either pool to receive structured routing events
-(`attempt`/`success`/`error`/`cooldown`/`exhausted`) for logging or tracing. Add
+Pass `on_event=...` to either pool to receive structured routing/cache events
+(`attempt`/`success`/`error`/`cooldown`/`cache_hit`/`cache_miss`/`exhausted`) for logging or tracing. Add
 your own endpoint with `register_provider(...)`, or a new request shape with
 `register_adapter(name, fn)`.
 

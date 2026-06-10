@@ -6,6 +6,7 @@ import logging
 
 from helpers import make_post
 
+from freellmpool.cache import Cache
 from freellmpool.observe import configure_logging_from_env, emit, logger
 from freellmpool.router import Pool
 
@@ -42,6 +43,24 @@ def test_a_broken_hook_does_not_break_routing(providers, env, quota):
     pool = Pool(providers, quota=quota, env=env, post=make_post({}), on_event=boom)
     reply = pool.chat([{"role": "user", "content": "hi"}])
     assert reply.text == "ok"  # completion still succeeds despite the bad hook
+
+
+def test_cache_events_are_emitted(providers, env, quota, tmp_path):
+    events = []
+    pool = Pool(
+        providers,
+        quota=quota,
+        env=env,
+        post=make_post({}),
+        cache=Cache(ttl=60, path=tmp_path / "cache.db"),
+        on_event=events.append,
+    )
+    pool.ask("same")
+    pool.ask("same")
+    kinds = [event["event"] for event in events]
+    assert "cache_miss" in kinds
+    assert "cache_store" in kinds
+    assert "cache_hit" in kinds
 
 
 def test_emit_without_hook_is_noop():

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+import threading
+
 from helpers import make_post, make_stream_post
 
 from freellmpool.cache import Cache
@@ -17,6 +20,39 @@ def test_cache_get_put_and_ttl(tmp_path):
     assert c.get(key)["text"] == "cached"
     t[0] = 200.0  # 100s later, ttl 50 → expired
     assert c.get(key) is None
+
+
+def test_cache_uses_wal_and_prunes_to_max_entries(tmp_path):
+    t = [100.0]
+    c = Cache(ttl=999.0, path=tmp_path / "c.db", clock=lambda: t[0], max_entries=2)
+    with sqlite3.connect(c.path) as con:
+        assert con.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    for key in ("k1", "k2", "k3"):
+        c.put(key, {"text": key})
+        t[0] += 1
+    with sqlite3.connect(c.path) as con:
+        rows = con.execute("SELECT key FROM cache ORDER BY created").fetchall()
+    assert [row[0] for row in rows] == ["k2", "k3"]
+
+
+def test_cache_concurrent_get_put_is_best_effort(tmp_path):
+    c = Cache(ttl=999.0, path=tmp_path / "c.db", max_entries=100)
+
+    def worker(n):
+        for i in range(25):
+            key = f"{n}-{i}"
+            c.put(key, {"text": key})
+            assert c.get(key) in (None, {"text": key})
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    with sqlite3.connect(c.path) as con:
+        count = con.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
+    assert count <= 100
 
 
 def test_make_key_includes_tool_choice():
