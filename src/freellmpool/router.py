@@ -42,7 +42,7 @@ from .errors import (
     NoProvidersConfigured,
     ProviderHTTPError,
 )
-from .metrics import Metrics
+from .metrics import Metrics, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
 from .quota import QuotaStore
@@ -444,9 +444,11 @@ class Pool:
         the ordering is a hint — failover still reaches all.
         """
 
-        # One snapshot instead of a locked read per target (matters for large catalogs).
+        # One quota and metrics snapshot instead of locked reads per target (matters
+        # for large catalogs and route explanations).
         snap = self.quota.snapshot()
         metrics = self.metrics
+        msnap = metrics.snapshot()
         mode = (
             routing
             if routing in ("fair", "fast", "quality", "spread", "legacy", "model", "model-fast")
@@ -459,10 +461,19 @@ class Pool:
         def over_of(t: Target) -> int:
             return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
 
+        def stat_of(t: Target):
+            return msnap.get(t.name)
+
+        def failing_of(t: Target) -> bool:
+            st = stat_of(t)
+            return bool(st and st.failing)
+
+        def score_of(t: Target) -> float:
+            return score_stat(stat_of(t))
+
         if mode == "quality":
             table = capability_table()
             need = difficulty if difficulty is not None else 0.5
-            msnap = metrics.snapshot()  # one locked read for failing + latency
 
             def lat_pen(t: Target) -> float:
                 # Latency penalty in [0,1]: a measured target's smoothed latency
@@ -472,7 +483,7 @@ class Pool:
                 # below the difficulty bar, this term only re-orders models that
                 # *already clear* the bar — so quality stops parking on a giant that
                 # takes tens of seconds when a comparably-capable model answers in ~1s.
-                st = msnap.get(t.name)
+                st = stat_of(t)
                 if st is None or st.ewma_ms is None:
                     return _QUALITY_UNKNOWN_LAT
                 return min(st.ewma_ms / 1000.0, _QUALITY_SLOW_S) / _QUALITY_SLOW_S
@@ -480,10 +491,9 @@ class Pool:
             def quality_key(t: Target) -> tuple[int, int, float, int]:
                 # over-budget, then known-failing sink to the back (still reachable);
                 # then capability-fit blended with latency; then least-used.
-                st = msnap.get(t.name)
                 return (
                     over_of(t),
-                    1 if (st and st.failing) else 0,
+                    1 if failing_of(t) else 0,
                     fit_penalty(model_capability(t.model, table), need) + lat_pen(t),
                     used_of(t),
                 )
@@ -493,10 +503,10 @@ class Pool:
         if mode in ("legacy", "model", "model-fast"):
 
             def legacy_fast_key(t: Target) -> tuple[int, float, int]:
-                return (over_of(t), metrics.score(t.name), used_of(t))
+                return (over_of(t), score_of(t), used_of(t))
 
             def legacy_fair_key(t: Target) -> tuple[int, int, int]:
-                return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
+                return (over_of(t), 1 if failing_of(t) else 0, used_of(t))
 
             key = legacy_fast_key if mode == "model-fast" else legacy_fair_key
             return sorted(targets, key=key)
@@ -508,25 +518,25 @@ class Pool:
             stats.targets.append(target)
             target_used = used_of(target)
             target_over = over_of(target)
-            target_failing = metrics.failing(target.name)
+            target_failing = failing_of(target)
             stats.used += target_used
             stats.all_over = stats.all_over and bool(target_over)
             stats.all_failing = stats.all_failing and target_failing
-            stats.best_score = min(stats.best_score, metrics.score(target.name))
+            stats.best_score = min(stats.best_score, score_of(target))
 
         def target_fair_key(t: Target) -> tuple[int, int, int]:
-            return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
+            return (over_of(t), 1 if failing_of(t) else 0, used_of(t))
 
         def target_fast_key(t: Target) -> tuple[int, float, int]:
-            return (over_of(t), metrics.score(t.name), used_of(t))
+            return (over_of(t), score_of(t), used_of(t))
 
         def target_spread_key(t: Target) -> tuple[int, int, int, float]:
             # least-used TIER first (spread across the whole pool), then fastest within tier.
             return (
                 over_of(t),
-                1 if metrics.failing(t.name) else 0,
+                1 if failing_of(t) else 0,
                 used_of(t) // _SPREAD_BUCKET,
-                metrics.score(t.name),
+                score_of(t),
             )
 
         if mode == "fast":

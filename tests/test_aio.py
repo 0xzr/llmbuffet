@@ -95,6 +95,30 @@ def test_async_uses_response_cache(providers, env, quota, tmp_path):
     assert len(apost.calls) == 1
 
 
+def test_async_cache_key_includes_pool_routing(providers, env, quota, tmp_path):
+    from freellmpool.cache import Cache
+
+    cache = Cache(ttl=60, path=tmp_path / "cache.sqlite")
+    fast_post = _async_post({})
+    fast = AsyncPool(
+        Pool(providers, quota=quota, env=env, cache=cache, routing="fast"),
+        apost=fast_post,
+    )
+    asyncio.run(fast.aask("same question", providers=["alpha", "beta"]))
+    assert len(fast_post.calls) == 1
+
+    quality_post = _async_post({})
+    quality = AsyncPool(
+        Pool(providers, quota=quota, env=env, cache=cache, routing="quality"),
+        apost=quality_post,
+    )
+    reply = asyncio.run(quality.aask("same question", providers=["alpha", "beta"]))
+
+    assert reply.cached is False
+    assert len(quality_post.calls) == 1
+    assert quality.stats["cache_hits"] == 0
+
+
 def test_async_custom_adapter_runs_via_thread(quota):
     from freellmpool import plugins
     from freellmpool.models import Model, Provider, Reply

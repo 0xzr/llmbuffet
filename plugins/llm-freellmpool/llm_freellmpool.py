@@ -10,6 +10,7 @@ as env vars to unlock more — see https://github.com/0xzr/freellmpool.
 from __future__ import annotations
 
 import llm
+
 from freellmpool import Pool
 
 

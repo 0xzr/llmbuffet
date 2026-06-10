@@ -323,7 +323,14 @@ class AsyncPool:
         cache_key = None
         if p._cache is not None:
             cache_key = p._cache.make_key(
-                messages, model, provider_list, max_tokens, temperature, tools, tool_choice
+                messages,
+                model,
+                provider_list,
+                max_tokens,
+                temperature,
+                tools,
+                tool_choice,
+                p.routing,
             )
             hit = await asyncio.to_thread(p._cache.get, cache_key)  # blocking sqlite off-loop
             if hit is not None:

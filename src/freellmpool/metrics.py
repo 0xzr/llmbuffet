@@ -95,12 +95,16 @@ class Metrics:
         targets are penalized mostly by failure rate, with latency as a tiebreak.
         """
         with self._lock:
-            st = self._stats.get(key)
-            if st is None or st.total == 0:
-                return _UNKNOWN_SCORE
-            lat_s = (st.ewma_ms or 0.0) / 1000.0
-            return (1.0 - st.success_rate) * 10.0 + min(lat_s, 10.0) * 0.1
+            return score_stat(self._stats.get(key))
 
 
 def _copy(st: Stat) -> Stat:
     return Stat(st.ok, st.fail, st.ewma_ms, st.last_ms, st.last_error)
+
+
+def score_stat(st: Stat | None) -> float:
+    """Routing penalty for a copied :class:`Stat`; mirrors :meth:`Metrics.score`."""
+    if st is None or st.total == 0:
+        return _UNKNOWN_SCORE
+    lat_s = (st.ewma_ms or 0.0) / 1000.0
+    return (1.0 - st.success_rate) * 10.0 + min(lat_s, 10.0) * 0.1
