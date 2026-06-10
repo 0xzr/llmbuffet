@@ -167,7 +167,9 @@ def test_default_post_enforces_deadline(monkeypatch):
             "Cl", (), {"stream": lambda self, *a, **k: _FakeCM(_FakeResp([b"a", b"b"]))}
         )(),
     )
-    times = iter([1000.0, 1000.5, 9999.0])  # deadline calc, chunk1 ok, chunk2 past deadline
+    times = iter(
+        [1000.0, 1000.5, 1000.5, 9999.0]
+    )  # deadline calc, attempt check, chunk1 ok, chunk2 past deadline
     monkeypatch.setattr(C.time, "monotonic", lambda: next(times))
     with pytest.raises(ProviderHTTPError):
         C.default_post("https://x.test/v1", {}, {}, 30.0)

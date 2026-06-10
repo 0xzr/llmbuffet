@@ -45,6 +45,25 @@ from .routing_modes import normalize_routing_mode
 AsyncPostFn = Callable[[str, dict, dict, float], Awaitable["_client.HTTPResult"]]
 
 
+async def _aread_capped_response(chunks, deadline: float, timeout: float) -> tuple[bytes, str]:
+    out: list[bytes] = []
+    total = 0
+    loop = asyncio.get_running_loop()
+    async for chunk in chunks:
+        total += len(chunk)
+        if total > _client._MAX_RESPONSE_BYTES:
+            raise ProviderHTTPError(
+                502,
+                f"upstream response exceeded {_client._MAX_RESPONSE_BYTES} bytes",
+                retryable=True,
+            )
+        if loop.time() > deadline:
+            raise ProviderHTTPError(504, f"upstream exceeded {timeout:.0f}s deadline", retryable=True)
+        out.append(chunk)
+    raw = b"".join(out)
+    return raw, raw.decode("utf-8", "replace")
+
+
 class AsyncPool:
     """Async counterpart to :class:`~freellmpool.Pool`.
 
@@ -128,32 +147,51 @@ class AsyncPool:
         import httpx
 
         client = await self._client_obj()
+        deadline = asyncio.get_running_loop().time() + timeout
         last_exc: httpx.HTTPError | None = None
+        last_result: _client.HTTPResult | None = None
         for attempt in range(_client._MAX_TRANSPORT_ATTEMPTS):
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
             try:
-                resp = await client.post(
+                async with client.stream(
+                    "POST",
                     url,
                     headers=headers,
                     json=body,
-                    timeout=httpx.Timeout(timeout, connect=min(_CONNECT_TIMEOUT, timeout)),
-                )
+                    timeout=httpx.Timeout(remaining, connect=min(_CONNECT_TIMEOUT, remaining)),
+                ) as resp:
+                    raw, text = await _aread_capped_response(
+                        resp.aiter_bytes(), deadline, remaining
+                    )
+                    status = resp.status_code
+                    response_headers = dict(resp.headers)
             except httpx.HTTPError as exc:
                 last_exc = exc
+                if not _client._retryable_transport_error(exc, httpx):
+                    raise
                 if attempt + 1 >= _client._MAX_TRANSPORT_ATTEMPTS:
                     raise
-                await asyncio.sleep(_client._RETRY_BACKOFF_S * (attempt + 1))
+                delay = _client._retry_delay_monotonic(None, attempt, deadline, asyncio.get_running_loop().time)
+                if delay is None:
+                    raise
+                await asyncio.sleep(delay)
                 continue
-            try:
-                data = resp.json()
-            except Exception:  # noqa: BLE001 — non-JSON error bodies
-                data = {}
-            result = _client.HTTPResult(status=resp.status_code, body=data, text=resp.text)
+            result = _client._json_result(status, raw, text, headers=response_headers)
+            last_result = result
             if _retryable(result.status) and attempt + 1 < _client._MAX_TRANSPORT_ATTEMPTS:
-                await asyncio.sleep(_client._RETRY_BACKOFF_S * (attempt + 1))
-                continue
+                delay = _client._retry_delay_monotonic(
+                    result, attempt, deadline, asyncio.get_running_loop().time
+                )
+                if delay is not None:
+                    await asyncio.sleep(delay)
+                    continue
             return result
         if last_exc is not None:  # pragma: no cover - loop structure guard
             raise last_exc
+        if last_result is not None:
+            return last_result
         raise ProviderHTTPError(502, "transport retry loop exhausted", retryable=True)
 
     # ---- per-target async dispatch -----------------------------------

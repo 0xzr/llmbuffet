@@ -21,7 +21,7 @@ def normalize_routing_mode(value: str | None, default: str = "fair") -> str:
     return fallback if fallback in _ROUTING_SET else "fair"
 
 
-def routing_override(value) -> str | None:
+def routing_override(value: object) -> str | None:
     """Return a valid override mode, or ``None`` for ``auto``/unknown values."""
     if not isinstance(value, str):
         return None

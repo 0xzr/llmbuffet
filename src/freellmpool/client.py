@@ -15,12 +15,14 @@ router and adapters can be unit-tested without touching the network.
 from __future__ import annotations
 
 import json
+import random
 import re
 import sys
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 
 from .errors import ProviderHTTPError
 from .models import EmbedReply, Provider, Reply, TranscribeReply
@@ -68,6 +70,7 @@ class HTTPResult:
     status: int
     body: dict
     text: str
+    headers: dict | None = None
 
 
 PostFn = Callable[[str, dict, dict, float], HTTPResult]
@@ -131,33 +134,50 @@ def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HT
     fails over."""
     import httpx
 
+    deadline = time.monotonic() + timeout
     last_exc: httpx.HTTPError | None = None
+    last_result: HTTPResult | None = None
     for attempt in range(_MAX_TRANSPORT_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            result = _post_once(url, headers, json_body, timeout)
+            result = _post_once(url, headers, json_body, remaining, deadline)
         except httpx.HTTPError as exc:
             last_exc = exc
+            if not _retryable_transport_error(exc, httpx):
+                raise
             if attempt + 1 >= _MAX_TRANSPORT_ATTEMPTS:
                 raise
-            time.sleep(_RETRY_BACKOFF_S * (attempt + 1))
+            delay = _retry_delay(None, attempt, deadline)
+            if delay is None:
+                raise
+            time.sleep(delay)
             continue
+        last_result = result
         if _retryable(result.status) and attempt + 1 < _MAX_TRANSPORT_ATTEMPTS:
-            time.sleep(_RETRY_BACKOFF_S * (attempt + 1))
-            continue
+            delay = _retry_delay(result, attempt, deadline)
+            if delay is not None:
+                time.sleep(delay)
+                continue
         return result
     if last_exc is not None:  # pragma: no cover - loop structure guard
         raise last_exc
+    if last_result is not None:
+        return last_result
     raise ProviderHTTPError(502, "transport retry loop exhausted", retryable=True)
 
 
-def _post_once(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:
-    deadline = time.monotonic() + timeout
+def _post_once(
+    url: str, headers: dict, json_body: dict, timeout: float, deadline: float
+) -> HTTPResult:
     with _client().stream(
         "POST", url, headers=headers, json=json_body, timeout=_timeout(timeout)
     ) as resp:
         raw, text = _read_capped_response(resp.iter_bytes(), deadline, timeout)
         status = resp.status_code
-    return _json_result(status, raw, text)
+        headers = dict(getattr(resp, "headers", {}) or {})
+    return _json_result(status, raw, text, headers=headers)
 
 
 def _read_capped_response(chunks, deadline: float, timeout: float) -> tuple[bytes, str]:
@@ -176,14 +196,61 @@ def _read_capped_response(chunks, deadline: float, timeout: float) -> tuple[byte
     return raw, raw.decode("utf-8", "replace")
 
 
-def _json_result(status: int, raw: bytes, text: str) -> HTTPResult:
+def _json_result(status: int, raw: bytes, text: str, headers: dict | None = None) -> HTTPResult:
     try:
         body = json.loads(raw) if raw else {}
         if not isinstance(body, dict):
             body = {}
     except (json.JSONDecodeError, ValueError):
         body = {}
-    return HTTPResult(status=status, body=body, text=text)
+    return HTTPResult(status=status, body=body, text=text, headers=headers)
+
+
+def _header(headers: dict | None, name: str) -> str | None:
+    if not headers:
+        return None
+    direct = headers.get(name)
+    if direct is not None:
+        return str(direct)
+    low = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == low:
+            return str(value)
+    return None
+
+
+def _retry_after_seconds(headers: dict | None) -> float | None:
+    raw = _header(headers, "Retry-After")
+    if not raw:
+        return None
+    raw = raw.strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, parsedate_to_datetime(raw).timestamp() - time.time())
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _retry_delay(result: HTTPResult | None, attempt: int, deadline: float) -> float | None:
+    return _retry_delay_monotonic(result, attempt, deadline, time.monotonic)
+
+
+def _retry_delay_monotonic(
+    result: HTTPResult | None, attempt: int, deadline: float, now
+) -> float | None:
+    base = _retry_after_seconds(result.headers if result is not None else None)
+    if base is None:
+        base = _RETRY_BACKOFF_S * (attempt + 1)
+    jitter = random.uniform(0.0, min(0.1, base * 0.1)) if base > 0 else 0.0
+    delay = base + jitter
+    return delay if now() + delay < deadline else None
+
+
+def _retryable_transport_error(exc, httpx) -> bool:
+    return isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
 
 
 class _StreamLines:
@@ -580,33 +647,50 @@ def default_multipart_post(
     pin a worker past the deadline."""
     import httpx
 
+    deadline = time.monotonic() + timeout
     last_exc: httpx.HTTPError | None = None
+    last_result: HTTPResult | None = None
     for attempt in range(_MAX_TRANSPORT_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            result = _multipart_once(url, headers, files, data, timeout)
+            result = _multipart_once(url, headers, files, data, remaining, deadline)
         except httpx.HTTPError as exc:
             last_exc = exc
+            if not _retryable_transport_error(exc, httpx):
+                raise
             if attempt + 1 >= _MAX_TRANSPORT_ATTEMPTS:
                 raise
-            time.sleep(_RETRY_BACKOFF_S * (attempt + 1))
+            delay = _retry_delay(None, attempt, deadline)
+            if delay is None:
+                raise
+            time.sleep(delay)
             continue
+        last_result = result
         if _retryable(result.status) and attempt + 1 < _MAX_TRANSPORT_ATTEMPTS:
-            time.sleep(_RETRY_BACKOFF_S * (attempt + 1))
-            continue
+            delay = _retry_delay(result, attempt, deadline)
+            if delay is not None:
+                time.sleep(delay)
+                continue
         return result
     if last_exc is not None:  # pragma: no cover - loop structure guard
         raise last_exc
+    if last_result is not None:
+        return last_result
     raise ProviderHTTPError(502, "transport retry loop exhausted", retryable=True)
 
 
-def _multipart_once(url: str, headers: dict, files: dict, data: dict, timeout: float) -> HTTPResult:
-    deadline = time.monotonic() + timeout
+def _multipart_once(
+    url: str, headers: dict, files: dict, data: dict, timeout: float, deadline: float
+) -> HTTPResult:
     with _client().stream(
         "POST", url, headers=headers, files=files, data=data, timeout=_timeout(timeout)
     ) as resp:
         raw, text = _read_capped_response(resp.iter_bytes(), deadline, timeout)
         status = resp.status_code
-        ctype = resp.headers.get("content-type", "")
+        response_headers = dict(getattr(resp, "headers", {}) or {})
+        ctype = _header(response_headers, "content-type") or ""
     if "application/json" in ctype:
         try:
             body = json.loads(raw) if raw else {}
@@ -616,7 +700,7 @@ def _multipart_once(url: str, headers: dict, files: dict, data: dict, timeout: f
             body = {}  # keep _err_message safe; transcribe() falls back to result.text
     else:
         body = {"text": text}  # response_format=text returns the transcription as plain text
-    return HTTPResult(status=status, body=body, text=text)
+    return HTTPResult(status=status, body=body, text=text, headers=response_headers)
 
 
 def transcribe(

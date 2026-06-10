@@ -189,9 +189,10 @@ class _CM:
 
 
 class _Resp:
-    def __init__(self, status, body):
+    def __init__(self, status, body, headers=None):
         self.status_code = status
         self._raw = json.dumps(body).encode()
+        self.headers = headers or {}
 
     def iter_bytes(self):
         yield self._raw
@@ -230,6 +231,87 @@ def test_default_post_retries_transport_error(monkeypatch):
     result = C.default_post("https://x.test/v1", {}, {}, 30.0)
     assert result.status == 200
     assert len(calls) == 2
+
+
+def test_default_post_honors_retry_after(monkeypatch):
+    calls = []
+    sleeps = []
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                return _CM(_Resp(429, {"error": "slow"}, {"Retry-After": "2"}))
+            return _CM(_Resp(200, openai_body("ok")))
+
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    monkeypatch.setattr(C.random, "uniform", lambda lo, hi: 0.0)
+    monkeypatch.setattr(C.time, "sleep", sleeps.append)
+    result = C.default_post("https://x.test/v1", {}, {}, 30.0)
+    assert result.status == 200
+    assert sleeps == [2.0]
+    assert len(calls) == 2
+
+
+def test_default_post_skips_retry_after_past_timeout(monkeypatch):
+    calls = []
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            return _CM(_Resp(429, {"error": "slow"}, {"Retry-After": "999"}))
+
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    monkeypatch.setattr(C.random, "uniform", lambda lo, hi: 0.0)
+    result = C.default_post("https://x.test/v1", {}, {}, 0.5)
+    assert result.status == 429
+    assert len(calls) == 1
+
+
+def test_default_post_returns_retryable_status_after_retry_sleep_exhausts_deadline(monkeypatch):
+    calls = []
+    sleeps = []
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            return _CM(_Resp(429, {"error": "slow"}))
+
+    times = iter([0.0, 0.0, 0.1, 0.1, 2.0])
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    monkeypatch.setattr(C, "_RETRY_BACKOFF_S", 0.5)
+    monkeypatch.setattr(C.random, "uniform", lambda lo, hi: 0.0)
+    monkeypatch.setattr(C.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(C.time, "sleep", sleeps.append)
+
+    result = C.default_post("https://x.test/v1", {}, {}, 1.0)
+    assert result.status == 429
+    assert sleeps == [0.5]
+    assert len(calls) == 1
+
+
+def test_default_post_does_not_retry_read_error(monkeypatch):
+    import httpx
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+        headers = {}
+
+        def iter_bytes(self):
+            raise httpx.ReadError("read failed")
+            yield b""  # pragma: no cover
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(1)
+            return _CM(Resp())
+
+    monkeypatch.setattr(C, "_client", lambda: Client())
+    with pytest.raises(httpx.ReadError):
+        C.default_post("https://x.test/v1", {}, {}, 30.0)
+    assert len(calls) == 1
 
 
 def test_client_singleton_under_concurrency():

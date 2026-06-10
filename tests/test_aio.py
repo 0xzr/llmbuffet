@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from helpers import gemini_body, make_post
 
+from freellmpool import client as sync_client
 from freellmpool.aio import AsyncPool
+from freellmpool.errors import ProviderHTTPError
 from freellmpool.router import Pool
 
 
@@ -143,3 +146,84 @@ def test_async_custom_adapter_runs_via_thread(quota):
         assert reply.text == "from-plugin"  # plugin adapter reached on the async path
     finally:
         plugins._reset_for_tests()
+
+
+class _AsyncResp:
+    def __init__(self, chunks, *, status=200, headers=None):
+        self._chunks = chunks
+        self.status_code = status
+        self.headers = headers or {"content-type": "application/json"}
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _AsyncCM:
+    def __init__(self, resp):
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def test_async_default_apost_streams_response(providers, env, quota):
+    class Client:
+        def stream(self, *args, **kwargs):
+            return _AsyncCM(_AsyncResp([b'{"choices":[{"message":{"content":"ok"}}]}']))
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env))
+
+    async def client_obj():
+        return Client()
+
+    pool._client_obj = client_obj
+    result = asyncio.run(pool._apost("https://x.test/v1", {}, {}, 30.0))
+    assert result.body["choices"][0]["message"]["content"] == "ok"
+
+
+def test_async_default_apost_caps_oversized_response(providers, env, quota, monkeypatch):
+    class Client:
+        def stream(self, *args, **kwargs):
+            return _AsyncCM(_AsyncResp([b"xx", b"xx"]))
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env))
+
+    async def client_obj():
+        return Client()
+
+    pool._client_obj = client_obj
+    monkeypatch.setattr(sync_client, "_MAX_RESPONSE_BYTES", 3)
+    with pytest.raises(ProviderHTTPError):
+        asyncio.run(pool._apost("https://x.test/v1", {}, {}, 30.0))
+
+
+def test_async_default_apost_retries_with_original_request_headers(providers, env, quota):
+    calls = []
+    request_headers = {"Authorization": "Bearer k", "Content-Type": "application/json"}
+
+    class Client:
+        def stream(self, *args, **kwargs):
+            calls.append(dict(kwargs["headers"]))
+            if len(calls) == 1:
+                return _AsyncCM(
+                    _AsyncResp(
+                        [b'{"error":"slow"}'],
+                        status=429,
+                        headers={"Retry-After": "0", "x-response": "provider"},
+                    )
+                )
+            return _AsyncCM(_AsyncResp([b'{"choices":[{"message":{"content":"ok"}}]}']))
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env))
+
+    async def client_obj():
+        return Client()
+
+    pool._client_obj = client_obj
+    result = asyncio.run(pool._apost("https://x.test/v1", request_headers, {}, 30.0))
+    assert result.status == 200
+    assert calls == [request_headers, request_headers]

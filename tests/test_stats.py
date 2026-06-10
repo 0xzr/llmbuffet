@@ -51,6 +51,13 @@ def test_corrupt_file_does_not_crash(tmp_path):
     assert s.snapshot()["requests"] == 1
 
 
+def test_stats_save_failure_is_best_effort(tmp_path, monkeypatch):
+    s = StatsStore(tmp_path / "s.json")
+    monkeypatch.setattr(s, "_save", lambda: (_ for _ in ()).throw(OSError("disk full")))
+    s.add(requests=1)  # must not raise
+    assert not (tmp_path / "s.json").exists()
+
+
 def test_pool_writes_through_to_stats_store(providers, env, quota, tmp_path):
     store = StatsStore(tmp_path / "s.json")
     pool = Pool(providers, quota=quota, env=env, post=make_post({}), stats_store=store)

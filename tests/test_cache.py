@@ -55,6 +55,17 @@ def test_cache_concurrent_get_put_is_best_effort(tmp_path):
     assert count <= 100
 
 
+def test_cache_connection_errors_are_best_effort(tmp_path, monkeypatch):
+    c = Cache(ttl=999.0, path=tmp_path / "c.db")
+
+    def broken_conn():
+        raise sqlite3.OperationalError("disk unavailable")
+
+    monkeypatch.setattr(c, "_conn", broken_conn)
+    assert c.get("missing") is None
+    c.put("k", {"text": "ok"})  # must not raise
+
+
 def test_make_key_includes_tool_choice():
     args = ([{"role": "user", "content": "hi"}], None, None, 1024, 0.0, [{"type": "function"}])
     k_auto = Cache.make_key(*args, "auto")

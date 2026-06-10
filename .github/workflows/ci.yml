@@ -27,7 +27,22 @@ jobs:
         run: ruff check .
       - name: Validate catalog
         run: python scripts/validate_catalog.py
+      - name: Type check focused helpers
+        run: mypy src/freellmpool/routing_modes.py src/freellmpool/catalog_validation.py
       - name: Import smoke
         run: python -c "import freellmpool; from freellmpool import Pool, AsyncPool; print(freellmpool.__version__, Pool, AsyncPool)"
       - name: Test
-        run: pytest --cov=freellmpool --cov-report=term-missing
+        run: pytest --cov=freellmpool --cov-report=term-missing --cov-fail-under=75
+      - name: Wheel smoke
+        run: |
+          python -m build
+          python -m venv /tmp/freellmpool-wheel-smoke
+          /tmp/freellmpool-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/freellmpool-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/freellmpool-wheel-smoke/bin/python -c "import freellmpool; from freellmpool import Pool, AsyncPool; print(freellmpool.__version__, Pool, AsyncPool)"
+          /tmp/freellmpool-wheel-smoke/bin/freellmpool --version
+          FREELLMPOOL_CONFIG_FILE=/tmp/flp-smoke-config.toml \
+          FREELLMPOOL_QUOTA_PATH=/tmp/flp-smoke-quota.json \
+          FREELLMPOOL_CACHE_PATH=/tmp/flp-smoke-cache.db \
+          FREELLMPOOL_EXTERNAL_CATALOG_PATH=/tmp/flp-smoke-external.json \
+            /tmp/freellmpool-wheel-smoke/bin/freellmpool doctor

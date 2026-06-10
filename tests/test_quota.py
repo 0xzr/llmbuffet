@@ -93,3 +93,19 @@ def test_malformed_quota_file_recovers_on_record(tmp_path):
     s = QuotaStore(path=path, clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC))
     assert s.record("groq", "m") == 1
     assert _store(tmp_path, 2).snapshot() == {"groq::m": 1}
+
+
+def test_batched_flush_failure_keeps_pending_visible(tmp_path, monkeypatch):
+    s = QuotaStore(
+        path=tmp_path / "q.json",
+        clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC),
+        flush_every=10,
+    )
+    s.record("groq", "m", 2)
+    with monkeypatch.context() as m:
+        m.setattr(s, "_save", lambda: (_ for _ in ()).throw(OSError("disk full")))
+        s.flush()  # best effort; must keep pending increments
+        assert s.snapshot() == {"groq::m": 2}
+
+    s.flush()
+    assert _store(tmp_path, 2).snapshot() == {"groq::m": 2}

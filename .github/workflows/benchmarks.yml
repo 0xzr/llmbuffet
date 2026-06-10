@@ -18,5 +18,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+      - name: Restore previous benchmark
+        uses: actions/cache/restore@v4
+        with:
+          path: .benchmarks/latest.json
+          key: hotpath-benchmark-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            hotpath-benchmark-${{ runner.os }}-
       - name: Run local hot-path benchmarks
-        run: python scripts/bench_hotpaths.py
+        run: |
+          mkdir -p .benchmarks
+          python scripts/bench_hotpaths.py | tee .benchmarks/current.json
+      - name: Compare with previous benchmark
+        run: |
+          if [ -f .benchmarks/latest.json ]; then
+            python scripts/compare_benchmarks.py .benchmarks/latest.json .benchmarks/current.json --warn-percent 30
+          else
+            echo "No previous benchmark artifact found; skipping comparison."
+          fi
+          cp .benchmarks/current.json .benchmarks/latest.json
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotpath-benchmarks
+          path: .benchmarks/current.json
+      - name: Save benchmark baseline
+        uses: actions/cache/save@v4
+        with:
+          path: .benchmarks/latest.json
+          key: hotpath-benchmark-${{ runner.os }}-${{ github.run_id }}

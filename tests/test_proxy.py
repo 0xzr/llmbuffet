@@ -55,18 +55,20 @@ def test_concurrent_chat_requests_share_pool_safely(providers, env, quota):
     thread.start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
     try:
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        total = 80
+        with ThreadPoolExecutor(max_workers=16) as ex:
             results = list(
                 ex.map(
                     lambda _: _post_json(
                         base + "/v1/chat/completions",
                         {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
                     ),
-                    range(16),
+                    range(total),
                 )
             )
         assert all(status == 200 for status, _body in results)
-        assert pool.stats["requests"] == 16
+        assert pool.stats["requests"] == total
+        assert sum(quota.snapshot().values()) == total
     finally:
         httpd.shutdown()
         httpd.server_close()

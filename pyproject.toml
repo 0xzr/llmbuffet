@@ -46,6 +46,8 @@ Issues = "https://github.com/0xzr/freellmpool/issues"
 
 [project.optional-dependencies]
 dev = [
+    "build>=1.2",
+    "mypy>=1.10",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
@@ -73,3 +75,8 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
