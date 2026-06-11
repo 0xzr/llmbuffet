@@ -88,3 +88,13 @@
   YouTube videos and the MCP Market listing.
 - Verified the YouTube watch URLs returned HTTP 200 and found the MCP Market
   listing at `https://mcpmarket.com/server/freellm-pool`.
+
+## P10 — MCP registry readiness
+
+- Verified `server.json` against the current official MCP server schema shape
+  for a PyPI stdio package entry and updated its description to include the full
+  MCP tool surface.
+- Added `docs/MCP_LISTINGS.md` with per-registry status for Smithery, Glama,
+  MCP.so, and PulseMCP, including source links and exact operator actions.
+- Prepared local submission copy in `docs/mcp-listings/` for the operator to
+  paste after merge; no external submissions were made.
