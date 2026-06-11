@@ -22,6 +22,8 @@ def test_release_ready_metadata_is_clean():
     release_ready = _load_script("check_release_ready")
     counts = release_ready.catalog_counts(ROOT)
 
+    # The exact provider count is a release-copy tripwire: adding/removing a provider
+    # should force a deliberate README/docs/server metadata update.
     assert counts.providers == 18
     assert counts.enabled_chat_models >= 200
     assert counts.cataloged_chat_models >= 300

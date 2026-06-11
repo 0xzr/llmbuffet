@@ -264,6 +264,7 @@ def run_stress(*, requests: int, concurrency: int, json_output: bool = False) ->
         started = time.perf_counter()
         results: Counter[str] = Counter()
         failures: list[str] = []
+        status_body: Any = {}
         try:
             with ThreadPoolExecutor(max_workers=concurrency) as ex:
                 futures = [ex.submit(_exercise, base, i) for i in range(requests)]
@@ -272,14 +273,17 @@ def run_stress(*, requests: int, concurrency: int, json_output: bool = False) ->
                     if status != 200:
                         failures.append(f"{name}:{status}")
                     results[name] += 1
-            status_code, status_body = _request_json("GET", f"{base}/status")
-            if status_code != 200:
-                failures.append(f"status:{status_code}")
+            try:
+                status_code, status_body = _request_json("GET", f"{base}/status")
+                if status_code != 200:
+                    failures.append(f"status:{status_code}")
+            except Exception as exc:  # noqa: BLE001 - report status failures in the summary
+                failures.append(f"status:{type(exc).__name__}: {exc}")
         finally:
+            elapsed = time.perf_counter() - started
             httpd.shutdown()
             httpd.server_close()
 
-    elapsed = time.perf_counter() - started
     summary = {
         "ok": not failures,
         "requests": requests,
