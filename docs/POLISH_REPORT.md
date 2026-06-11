@@ -60,3 +60,13 @@
 - Added upload-ready `assets/social-preview.png` at 1280x640, kept the editable
   SVG source, and documented the profile pin plus social-preview upload steps
   without making external writes.
+
+## P6 — Contributor surface
+
+- Added bug, docs, and integration issue templates plus a PR template with the
+  expected `ruff check .` and `pytest` verification path.
+- Added six ready-to-file good-first-issue drafts in `docs/good-first-issues/`
+  and an operator handoff in `docs/GOOD_FIRST_ISSUES.md` with label setup and
+  `gh issue create` commands.
+- Refreshed `CONTRIBUTING.md` and the README contributor section with the
+  current dev-loop commands and no-network testing expectations.

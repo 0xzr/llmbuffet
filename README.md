@@ -396,10 +396,11 @@ higher limits.
 
 New providers and fixes to stale limits are the most useful contributions, and
 both are usually a small change to `providers.toml`. See
-[CONTRIBUTING.md](CONTRIBUTING.md). Tests run with no network access:
+[CONTRIBUTING.md](CONTRIBUTING.md). Maintainer-ready newcomer tasks are drafted in
+[docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md). Tests run with no network access:
 
 ```bash
-pip install -e ".[dev]" && pytest && ruff check src tests
+python -m pip install -e ".[dev]" && ruff check . && pytest
 ```
 
 ## License

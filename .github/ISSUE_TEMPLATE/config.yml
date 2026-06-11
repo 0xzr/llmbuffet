@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Privacy, ToS, and provider behavior FAQ
+    url: https://github.com/0xzr/freellmpool/blob/main/FAQ.md
+    about: Read this before filing questions about prompt routing, provider limits, or bans.
+  - name: Contributor guide
+    url: https://github.com/0xzr/freellmpool/blob/main/CONTRIBUTING.md
+    about: Local setup, tests, and provider-catalog contribution notes.
