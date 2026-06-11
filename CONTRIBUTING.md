@@ -14,6 +14,20 @@ pytest          # 0 network calls — everything is faked
 ruff check src tests
 ```
 
+Useful maintainer checks:
+
+```bash
+python scripts/stress_proxy.py --profile ci
+python scripts/check_release_ready.py --skip-build
+python scripts/check_release_ready.py
+```
+
+`stress_proxy.py` starts a local fake-backed proxy and sends mixed chat,
+streaming, embeddings, Responses, Anthropic Messages, transcription, models,
+and health traffic through the real HTTP server. `check_release_ready.py`
+cross-checks version/provider/model-count metadata; without `--skip-build` it
+also builds the sdist/wheel, runs `twine check`, and fresh-installs the wheel.
+
 ## Adding a provider
 
 The whole catalog is [`src/freellmpool/providers.toml`](src/freellmpool/providers.toml).

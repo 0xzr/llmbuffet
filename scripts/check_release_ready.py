@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Release readiness checks for freellmpool.
+
+By default this validates metadata/count surfaces and then builds, checks, and
+fresh-installs the wheel from the current checkout. Use ``--skip-build`` for a
+fast CI metadata guard.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if _SRC.is_dir():
+    sys.path.insert(0, str(_SRC))
+
+from freellmpool._version import __version__  # noqa: E402
+
+
+@dataclass(frozen=True)
+class CatalogCounts:
+    providers: int
+    enabled_chat_models: int
+    cataloged_chat_models: int
+
+    @property
+    def live_bucket(self) -> str:
+        return _bucket(self.enabled_chat_models)
+
+    @property
+    def cataloged_bucket(self) -> str:
+        return _bucket(self.cataloged_chat_models)
+
+
+def _bucket(value: int) -> str:
+    if value < 100:
+        return str(value)
+    return f"{(value // 100) * 100}+"
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _load_pyproject(root: Path) -> dict:
+    return tomllib.loads(_read(root / "pyproject.toml"))
+
+
+def catalog_counts(root: Path) -> CatalogCounts:
+    data = tomllib.loads(_read(root / "src" / "freellmpool" / "providers.toml"))
+    providers = data.get("provider") or []
+    enabled = 0
+    cataloged = 0
+    for provider in providers:
+        models = provider.get("models") or []
+        cataloged += len(models)
+        enabled += sum(1 for model in models if model.get("enabled", True))
+    return CatalogCounts(
+        providers=len(providers),
+        enabled_chat_models=enabled,
+        cataloged_chat_models=cataloged,
+    )
+
+
+def metadata_errors(root: Path, *, version: str | None = None) -> list[str]:
+    version = version or __version__
+    errors: list[str] = []
+    pyproject = _load_pyproject(root)
+    project = pyproject["project"]
+    server = json.loads(_read(root / "server.json"))
+    readme = _read(root / "README.md")
+    docs_index = _read(root / "docs" / "index.html")
+    demo = _read(root / "assets" / "demo.svg")
+    changelog = _read(root / "CHANGELOG.md")
+    demo_script = _read(root / "scripts" / "demo.sh")
+    counts = catalog_counts(root)
+
+    def require(condition: bool, message: str) -> None:
+        if not condition:
+            errors.append(message)
+
+    require(project["version"] == version, f"pyproject version is {project['version']}, not {version}")
+    require(__version__ == version, f"package __version__ is {__version__}, not {version}")
+    require(server.get("version") == version, "server.json top-level version mismatch")
+    package_version = ((server.get("packages") or [{}])[0] or {}).get("version")
+    require(package_version == version, "server.json package version mismatch")
+    require(f"Latest release: {version}" in docs_index, "docs/index.html latest release mismatch")
+    require(
+        f'"softwareVersion": "{version}"' in docs_index,
+        "docs/index.html JSON-LD softwareVersion mismatch",
+    )
+    require(f"freellmpool-{version}" in demo, "assets/demo.svg install transcript mismatch")
+    require(re.search(rf"^## \[{re.escape(version)}\]", changelog, re.MULTILINE) is not None, "CHANGELOG missing top-level release entry")
+
+    provider_phrase = f"{counts.providers} LLM providers"
+    require(provider_phrase in project["description"], "pyproject provider count mismatch")
+    require(provider_phrase in server["description"], "server.json provider count mismatch")
+    require(provider_phrase in readme, "README provider count mismatch")
+    require(f"{counts.providers} providers" in demo, "demo SVG provider count mismatch")
+    require(f"{counts.providers} free tiers" in demo, "demo SVG free-tier count mismatch")
+    require(
+        f"{counts.enabled_chat_models} models" in demo,
+        "demo SVG enabled model count mismatch",
+    )
+    require(
+        f"{counts.live_bucket} live-validated" in readme,
+        "README live-validated model bucket mismatch",
+    )
+    require(
+        f"{counts.live_bucket} live-validated" in docs_index,
+        "docs/index.html live-validated model bucket mismatch",
+    )
+    require(
+        f"{counts.cataloged_bucket} cataloged" in project["description"],
+        "pyproject cataloged model bucket mismatch",
+    )
+    require(
+        f"{counts.cataloged_bucket} cataloged" in readme,
+        "README cataloged model bucket mismatch",
+    )
+    require(
+        f"{counts.cataloged_bucket} cataloged" in docs_index,
+        "docs/index.html cataloged model bucket mismatch",
+    )
+    require("16 providers, 56 models" not in demo_script, "scripts/demo.sh has stale proxy count")
+    return errors
+
+
+def _run(cmd: list[str], *, cwd: Path) -> None:
+    subprocess.run(cmd, cwd=cwd, check=True)
+
+
+def build_and_smoke(root: Path, *, version: str, dist_dir: Path | None = None) -> None:
+    if dist_dir is None:
+        tmp = tempfile.TemporaryDirectory(prefix="flp-release-ready-")
+        dist = Path(tmp.name) / "dist"
+    else:
+        tmp = None
+        dist = dist_dir
+        if dist.exists():
+            shutil.rmtree(dist)
+    try:
+        _run([sys.executable, "-m", "build", "--outdir", str(dist)], cwd=root)
+        _run([sys.executable, "-m", "twine", "check", *[str(p) for p in sorted(dist.iterdir())]], cwd=root)
+        wheels = sorted(dist.glob("*.whl"))
+        if not wheels:
+            raise RuntimeError("build produced no wheel")
+        venv = dist.parent / "wheel-smoke"
+        if venv.exists():
+            shutil.rmtree(venv)
+        _run([sys.executable, "-m", "venv", str(venv)], cwd=root)
+        py = venv / "bin" / "python"
+        cli = venv / "bin" / "freellmpool"
+        _run([str(py), "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
+        _run([str(py), "-m", "pip", "install", "--no-cache-dir", str(wheels[0])], cwd=root)
+        check = (
+            "import freellmpool; "
+            f"assert freellmpool.__version__ == {version!r}, freellmpool.__version__; "
+            "from freellmpool import client; "
+            f"assert 'freellmpool/{version}' in client._USER_AGENT, client._USER_AGENT"
+        )
+        _run([str(py), "-c", check], cwd=root)
+        _run([str(cli), "--version"], cwd=root)
+    finally:
+        if tmp is not None:
+            tmp.cleanup()
+
+
+def pypi_smoke(version: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="flp-pypi-smoke-") as td:
+        root = Path(td)
+        venv = root / "venv"
+        _run([sys.executable, "-m", "venv", str(venv)], cwd=root)
+        py = venv / "bin" / "python"
+        cli = venv / "bin" / "freellmpool"
+        _run([str(py), "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
+        _run([str(py), "-m", "pip", "install", "--no-cache-dir", f"freellmpool=={version}"], cwd=root)
+        _run([str(py), "-c", f"import freellmpool; assert freellmpool.__version__ == {version!r}"], cwd=root)
+        _run([str(cli), "--version"], cwd=root)
+
+
+def docker_smoke(image: str, version: str) -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        raise RuntimeError("docker is not installed")
+    _run([docker, "pull", image], cwd=Path.cwd())
+    _run([docker, "run", "--rm", image, "--version"], cwd=Path.cwd())
+    # Keep this smoke cheap and non-networked inside the container.
+    _run(
+        [
+            docker,
+            "run",
+            "--rm",
+            "-e",
+            "FREELLMPOOL_CONFIG_FILE=/tmp/config.toml",
+            "-e",
+            "FREELLMPOOL_QUOTA_PATH=/tmp/quota.json",
+            image,
+            "doctor",
+        ],
+        cwd=Path.cwd(),
+    )
+    print(f"Docker image {image} smoke passed for {version}.")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
+    parser.add_argument("--version", default=__version__)
+    parser.add_argument("--skip-build", action="store_true", help="only run metadata checks")
+    parser.add_argument("--dist-dir", type=Path, help="where to write build artifacts")
+    parser.add_argument("--check-pypi", action="store_true", help="install this version from PyPI")
+    parser.add_argument("--check-docker", metavar="IMAGE", help="pull and smoke-test a Docker image")
+    args = parser.parse_args(argv)
+
+    root = args.root.resolve()
+    errors = metadata_errors(root, version=args.version)
+    if errors:
+        print("Release readiness failed:", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+    print(f"Metadata readiness passed for freellmpool {args.version}.")
+    if not args.skip_build:
+        build_and_smoke(root, version=args.version, dist_dir=args.dist_dir)
+        print("Build, twine check, and fresh wheel smoke passed.")
+    if args.check_pypi:
+        pypi_smoke(args.version)
+        print(f"PyPI smoke passed for freellmpool {args.version}.")
+    if args.check_docker:
+        docker_smoke(args.check_docker, args.version)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

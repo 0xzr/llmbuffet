@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from helpers import gemini_body, make_post, make_stream_post
+from helpers import gemini_body, make_post, make_stream_post, openai_body
 
 from freellmpool import __version__
+from freellmpool.client import HTTPResult
 from freellmpool.proxy import (
+    _MAX_BODY,
     _MAX_CONNECTIONS,
     _BoundedThreadingHTTPServer,
     _parse_model,
@@ -326,6 +331,27 @@ def _expect_status(url, payload, headers=None):
         return e.code
 
 
+def _raw_http(base: str, request: bytes, *, shutdown_write: bool = False) -> bytes:
+    parts = urllib.parse.urlsplit(base)
+    assert parts.hostname is not None
+    assert parts.port is not None
+    chunks = []
+    with socket.create_connection((parts.hostname, parts.port), timeout=2.0) as sock:
+        sock.settimeout(2.0)
+        sock.sendall(request)
+        if shutdown_write:
+            sock.shutdown(socket.SHUT_WR)
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def test_malformed_body_returns_400_not_crash(server):
     # non-object body
     assert _expect_status(server + "/v1/chat/completions", [1, 2, 3]) == 400
@@ -347,6 +373,162 @@ def test_malformed_body_returns_400_not_crash(server):
         )[0]
         == 200
     )
+
+
+def test_oversized_json_body_rejected_before_reading_body(server):
+    request = (
+        b"POST /v1/chat/completions HTTP/1.1\r\n"
+        b"Host: 127.0.0.1\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {_MAX_BODY + 1}\r\n".encode()
+        + b"Connection: close\r\n\r\n"
+    )
+    raw = _raw_http(server, request)
+
+    assert b" 413 " in raw.splitlines()[0]
+    assert (
+        _post_json(
+            server + "/v1/chat/completions",
+            {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+        )[0]
+        == 200
+    )
+
+
+def test_truncated_body_returns_400_and_server_stays_alive(server):
+    body = b'{"model":"auto"'
+    request = (
+        b"POST /v1/chat/completions HTTP/1.1\r\n"
+        b"Host: 127.0.0.1\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: 200\r\n"
+        b"Connection: close\r\n\r\n"
+        + body
+    )
+    raw = _raw_http(server, request, shutdown_write=True)
+
+    assert b" 400 " in raw.splitlines()[0]
+    assert _expect_status(server + "/v1/chat/completions", {"model": "auto"}) == 400
+
+
+def test_slow_client_body_times_out_without_pin(providers, env, quota):
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), stream_post=make_stream_post({}))
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    httpd.RequestHandlerClass.timeout = 0.2
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        request = (
+            b"POST /v1/chat/completions HTTP/1.1\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 200\r\n"
+            b"Connection: close\r\n\r\n"
+        )
+        raw = _raw_http(base, request)
+        assert b" 400 " in raw.splitlines()[0]
+        assert (
+            _post_json(
+                base + "/v1/chat/completions",
+                {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+            )[0]
+            == 200
+        )
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_streaming_client_disconnect_closes_upstream_iterator(providers, env, quota):
+    class ClosableLines:
+        def __init__(self) -> None:
+            self.closed = threading.Event()
+
+        def __iter__(self):
+            try:
+                for _ in range(200):
+                    time.sleep(0.002)
+                    yield "data: " + json.dumps(
+                        {"choices": [{"delta": {"content": "x" * 2048}}]}
+                    )
+                yield "data: [DONE]"
+            finally:
+                self.closed.set()
+
+        def close(self) -> None:
+            self.closed.set()
+
+    lines = ClosableLines()
+
+    def stream_post(url, headers, body, timeout):
+        return 200, lines
+
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), stream_post=stream_post)
+    httpd, base = _serve(pool)
+    try:
+        payload = json.dumps(
+            {"model": "auto", "stream": True, "messages": [{"role": "user", "content": "hi"}]}
+        ).encode()
+        parts = urllib.parse.urlsplit(base)
+        assert parts.hostname is not None
+        assert parts.port is not None
+        sock = socket.create_connection((parts.hostname, parts.port), timeout=2.0)
+        try:
+            sock.sendall(
+                b"POST /v1/chat/completions HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(payload)}\r\n".encode()
+                + b"Connection: close\r\n\r\n"
+                + payload
+            )
+            raw = b""
+            deadline = time.monotonic() + 2.0
+            while b"data:" not in raw and time.monotonic() < deadline:
+                raw += sock.recv(4096)
+            assert b"data:" in raw
+        finally:
+            sock.close()
+        assert lines.closed.wait(5.0)
+        assert _get_json(base + "/status")[0] == 200
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_shutdown_during_inflight_request_completes_without_deadlock(providers, env, quota):
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_post(url, headers, body, timeout):
+        started.set()
+        assert release.wait(3.0)
+        return HTTPResult(200, openai_body("ok"), "ok")
+
+    pool = Pool(providers, quota=quota, env=env, post=blocking_post, stream_post=make_stream_post({}))
+    httpd, base = _serve(pool)
+    result: dict[str, object] = {}
+
+    def call_proxy() -> None:
+        result["value"] = _post_json(
+            base + "/v1/chat/completions",
+            {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    worker = threading.Thread(target=call_proxy)
+    worker.start()
+    assert started.wait(2.0)
+    stopper = threading.Thread(target=httpd.shutdown)
+    stopper.start()
+    release.set()
+    worker.join(timeout=3.0)
+    stopper.join(timeout=3.0)
+    httpd.server_close()
+
+    assert not worker.is_alive()
+    assert not stopper.is_alive()
+    assert result["value"][0] == 200
 
 
 def test_proxy_auth(providers, env, quota):
