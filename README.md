@@ -346,15 +346,23 @@ Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## How it compares
 
-| Tool | What it is | Install | Keyless start | CLI / library / proxy / MCP |
-|---|---|---|---|---|
-| **freellmpool** | Pools many providers' **free tiers** | `pip install` | Yes (3 providers) | All four |
-| OpenRouter | Hosted paid aggregator (some free models) | API key | No | API only |
-| LiteLLM | Multi-provider SDK/proxy (bring your own keys) | `pip install` | No | Library + proxy |
-| Self-hosted free-API servers | A server you deploy | Docker + config | No | Server only |
+| Tool | Keyless start | # providers | Failover | MCP server | CLI | Transcription | Local/self-hosted | License |
+|---|---|---:|---|---|---|---|---|---|
+| **freellmpool** | Yes: Pollinations, OVHcloud, Kilo Gateway; LLM7 is key-optional | 18 built-in chat providers | Yes: tries the next provider on rate limits, timeouts, 5xx, empty replies, and transport errors | Yes: `freellmpool mcp` | Yes: `freellmpool ask`, `tokenmax`, `providers`, `proxy`, and more | Yes: OpenAI-compatible `/v1/audio/transcriptions` with provider failover | Yes: local Python package and local proxy | MIT |
+| OpenRouter free models | No: OpenRouter account/API key required | One hosted OpenRouter account routing across many upstreams; the free-model router currently lists free variants | Yes: OpenRouter handles provider routing/fallbacks | Not a native MCP server; OpenRouter docs show MCP-client/tool patterns | No first-party local CLI in the docs checked | Yes: OpenRouter now documents audio transcription APIs | No: hosted service | Proprietary service |
+| LiteLLM | No: bring provider keys or hosted LiteLLM credentials | 100+ LLM providers | Yes: router/fallbacks, including transcription fallbacks | Yes: LiteLLM Proxy includes an MCP Gateway | Yes: SDK/proxy command surface, not a one-shot free-model CLI | Yes: `/audio/transcriptions` support | Yes: self-host the proxy or use hosted LiteLLM | MIT for core repo; commercial license for enterprise-only pieces |
+| FreeLLMAPI | No: add your own free-tier provider keys; keyless providers can be configured after setup | 16 free-tier providers plus custom OpenAI-compatible endpoints | Yes: fallback chain on 429, 5xx, and timeouts | No native MCP server in the README checked | Dashboard/server, desktop app, and Docker; no first-class one-shot CLI in the README checked | No: `/v1/audio/*` is listed as not yet supported | Yes: self-hosted Node/Docker proxy | MIT |
 
-freellmpool's niche is the **keyless, pip-installable client** for squeezing the
-hosted free tiers — not a server you deploy, and not a paid aggregator.
+FreeLLMAPI predates this project, and the overlap is independent convergence:
+both projects noticed that legitimate free tiers are useful when treated
+carefully. freellmpool's niche is the **keyless, pip-installable client** for
+squeezing hosted free tiers from a CLI, library, local proxy, and MCP server;
+OpenRouter is the polished hosted route; LiteLLM is the mature bring-your-own-key
+gateway.
+
+Table sources: freellmpool's catalog and proxy code in this repo; OpenRouter's
+quickstart, free-model, routing, and audio docs; LiteLLM's README, MCP docs, and
+audio transcription docs; FreeLLMAPI's README.
 
 ## FAQ
 

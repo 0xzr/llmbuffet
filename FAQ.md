@@ -103,7 +103,8 @@ The most reliable setup is to add several legitimate free keys, then use
   first-run UX, a CLI, local proxy, MCP server, transcription, and quota-aware
   failover.
 - FreeLLMAPI predates this project; the ideas converged independently. The
-  README comparison table keeps the comparison gracious and feature-specific.
+  [README comparison table](README.md#how-it-compares) keeps the comparison
+  gracious and feature-specific.
 
 ## Can I get banned for using freellmpool?
 

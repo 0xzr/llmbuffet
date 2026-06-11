@@ -21,3 +21,12 @@
 - Linked the FAQ prominently from the top of the README.
 - Grounded behavior claims in `providers.toml`, `models.py`, `config.py`,
   `router.py`, and `client.py`; provider privacy links are listed separately.
+
+## P4 — Gracious comparison table
+
+- Replaced the README comparison table with the required columns: keyless start,
+  provider coverage, failover, MCP server, CLI, transcription, local/self-hosted,
+  and license.
+- Added rows for freellmpool, OpenRouter free models, LiteLLM, and FreeLLMAPI.
+- Noted that FreeLLMAPI predates this project and that the overlap is independent
+  convergence.

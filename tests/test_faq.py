@@ -22,3 +22,26 @@ def test_readme_links_faq_prominently():
     first_screen = readme.split("## Run a coding agent on free models", 1)[0]
 
     assert "[FAQ](FAQ.md)" in first_screen
+
+
+def test_readme_comparison_table_has_required_p4_shape():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## How it compares", 1)[1].split("## FAQ", 1)[0]
+
+    for column in (
+        "Keyless start",
+        "# providers",
+        "Failover",
+        "MCP server",
+        "CLI",
+        "Transcription",
+        "Local/self-hosted",
+        "License",
+    ):
+        assert column in section
+
+    for row in ("**freellmpool**", "OpenRouter free models", "LiteLLM", "FreeLLMAPI"):
+        assert row in section
+
+    assert "FreeLLMAPI predates this project" in section
+    assert "independent convergence" in section
