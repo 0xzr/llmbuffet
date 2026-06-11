@@ -12,7 +12,12 @@ import pytest
 from helpers import gemini_body, make_post, make_stream_post
 
 from freellmpool import __version__
-from freellmpool.proxy import _parse_model, serve
+from freellmpool.proxy import (
+    _MAX_CONNECTIONS,
+    _BoundedThreadingHTTPServer,
+    _parse_model,
+    serve,
+)
 from freellmpool.router import Pool
 
 
@@ -51,6 +56,10 @@ def test_chat_completions_shape(server):
 def test_proxy_server_header_uses_package_version(server):
     with urllib.request.urlopen(server + "/v1/models") as resp:  # noqa: S310
         assert f"freellmpool/{__version__}" in resp.headers["Server"]
+
+
+def test_proxy_listen_backlog_matches_connection_cap():
+    assert _BoundedThreadingHTTPServer.request_queue_size == _MAX_CONNECTIONS
 
 
 def test_concurrent_chat_requests_share_pool_safely(providers, env, quota):

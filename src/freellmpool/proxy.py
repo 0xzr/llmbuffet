@@ -1270,6 +1270,7 @@ class _BoundedThreadingHTTPServer(ThreadingHTTPServer):
     Past the cap, new connections get a quick 503 and are dropped."""
 
     daemon_threads = True
+    request_queue_size = _MAX_CONNECTIONS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
