@@ -79,3 +79,12 @@
   keywords, Docs/Changelog project URLs, and broader trove classifiers.
 - Added `docs/RELEASE_CHECKLIST.md` with the operator-only tag, build, PyPI
   publish, and post-release smoke commands.
+
+## P8 — Spanish README + featured links
+
+- Added `README.es.md`, a Spanish translation of the current README with a note
+  that the English README remains the source of truth.
+- Added a short `Featured in` section to the README linking the two community
+  YouTube videos and the MCP Market listing.
+- Verified the YouTube watch URLs returned HTTP 200 and found the MCP Market
+  listing at `https://mcpmarket.com/server/freellm-pool`.

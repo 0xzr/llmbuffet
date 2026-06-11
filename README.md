@@ -392,6 +392,11 @@ higher limits.
 **Is it free and open source?** Yes, MIT-licensed. More at the
 [project page](https://0xzr.github.io/freellmpool/).
 
+## Featured in
+
+- Community videos: [YouTube](https://www.youtube.com/watch?v=1UfIlWoedho) and [YouTube](https://www.youtube.com/watch?v=oaM_E92WVGQ).
+- Directory: [FreeLLM Pool on MCP Market](https://mcpmarket.com/server/freellm-pool).
+
 ## Contributing
 
 New providers and fixes to stale limits are the most useful contributions, and
