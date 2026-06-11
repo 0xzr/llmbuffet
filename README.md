@@ -394,7 +394,7 @@ higher limits.
 
 ## Featured in
 
-- Community videos: [YouTube](https://www.youtube.com/watch?v=1UfIlWoedho) and [YouTube](https://www.youtube.com/watch?v=oaM_E92WVGQ).
+- Community videos (Spanish, by lytohlg AI): ["Accede a 18 modelos de IA GRATIS con 1 solo comando"](https://www.youtube.com/watch?v=1UfIlWoedho) and ["Prueba 18 IAs GRATIS sin API key en 30 segundos"](https://www.youtube.com/watch?v=oaM_E92WVGQ).
 - Directory: [FreeLLM Pool on MCP Market](https://mcpmarket.com/server/freellm-pool).
 
 ## Contributing

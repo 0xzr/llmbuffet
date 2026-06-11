@@ -415,7 +415,7 @@ claves gratuitas de otros proveedores para más modelos y límites mayores.
 
 ## Destacado en
 
-- Videos de la comunidad: [YouTube](https://www.youtube.com/watch?v=1UfIlWoedho) y [YouTube](https://www.youtube.com/watch?v=oaM_E92WVGQ).
+- Videos de la comunidad (por lytohlg AI): ["Accede a 18 modelos de IA GRATIS con 1 solo comando"](https://www.youtube.com/watch?v=1UfIlWoedho) y ["Prueba 18 IAs GRATIS sin API key en 30 segundos"](https://www.youtube.com/watch?v=oaM_E92WVGQ).
 - Directorio: [FreeLLM Pool en MCP Market](https://mcpmarket.com/server/freellm-pool).
 
 ## Contribuir
