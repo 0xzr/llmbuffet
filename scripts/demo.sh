@@ -16,5 +16,6 @@ freellmpool providers 2>/dev/null | head -7
 sleep 1.5
 
 say "freellmpool proxy   # drop-in OpenAI endpoint for any tool"
-printf "freellmpool proxy on http://127.0.0.1:8080/v1  (16 providers, 56 models)\n"
+summary="$(freellmpool providers 2>/dev/null | head -1 | sed 's/^freellmpool catalog: //')"
+printf "freellmpool proxy on http://127.0.0.1:8080/v1  (%s)\n" "${summary:-provider pool ready}"
 sleep 2.0
