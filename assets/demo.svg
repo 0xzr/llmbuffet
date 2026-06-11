@@ -39,7 +39,7 @@
 
   <g transform="translate(58 108)">
     <text class="text line l1" x="0" y="0"><tspan class="prompt">$</tspan> pip install freellmpool</text>
-    <text class="text line l2" x="0" y="42"><tspan class="green">Successfully installed freellmpool-0.11.2</tspan> <tspan class="dim">(httpx only)</tspan></text>
+    <text class="text line l2" x="0" y="42"><tspan class="green">Successfully installed freellmpool-0.11.3</tspan> <tspan class="dim">(httpx only)</tspan></text>
     <text class="text line l3" x="0" y="84"><tspan class="prompt">$</tspan> freellmpool tokenmax "name this free LLM gateway" --max-models 6</text>
     <text class="text line l4" x="0" y="126"><tspan class="pink">TOKENMAXXING</tspan> <tspan class="yellow">6/6</tspan> models across <tspan class="cyan">4 providers</tspan></text>
     <text class="text line l5" x="0" y="168"><tspan class="cyan">pollinations/openai</tspan>       "freellmpool"</text>

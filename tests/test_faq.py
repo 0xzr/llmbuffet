@@ -4,6 +4,8 @@ import tomllib
 import xml.dom.minidom
 from pathlib import Path
 
+from freellmpool import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -65,7 +67,7 @@ def test_demo_assets_are_well_formed_and_current():
     xml.dom.minidom.parseString(results)
     assert "TOKENMAXXING" in demo
     assert "--animation-duration: 8500ms" in demo
-    assert "freellmpool-0.11.2" in demo
+    assert f"freellmpool-{__version__}" in demo
     assert "18 providers, 237 models" in demo
     assert "18 free tiers" in demo
     assert "200+" in results

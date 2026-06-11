@@ -55,7 +55,7 @@
 
 - Audited live GitHub About/topics metadata read-only and recorded the 20-topic
   replacement plan in `docs/GITHUB_DISCOVERY.md`.
-- Prepared a 103-character About description with the zero-keys hook and the
+- Prepared a 107-character About description with the zero-keys hook and the
   exact operator-only `gh repo edit` command for after merge.
 - Added upload-ready `assets/social-preview.png` at 1280x640, kept the editable
   SVG source, and documented the profile pin plus social-preview upload steps
@@ -70,3 +70,12 @@
   `gh issue create` commands.
 - Refreshed `CONTRIBUTING.md` and the README contributor section with the
   current dev-loop commands and no-network testing expectations.
+
+## P7 — Release + PyPI metadata polish
+
+- Prepared version `0.11.3` across package metadata, MCP `server.json`, docs
+  release markers, changelog, and README demo transcript.
+- Updated PyPI metadata with the short GitHub About description, discovery
+  keywords, Docs/Changelog project URLs, and broader trove classifiers.
+- Added `docs/RELEASE_CHECKLIST.md` with the operator-only tag, build, PyPI
+  publish, and post-release smoke commands.

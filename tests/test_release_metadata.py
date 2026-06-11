@@ -23,7 +23,7 @@ def test_release_metadata_versions_match_package() -> None:
     assert server["packages"][0]["version"] == version
     project_description = pyproject["project"]["description"]
     provider_count = re.search(r"(\d+) LLM providers", project_description)
-    model_count = re.search(r"\((\d+\+) cataloged models\)", project_description)
+    model_count = re.search(r"(\d+\+) cataloged models", project_description)
     live_count = re.search(r"\((\d+\+) live-validated,", readme)
     assert provider_count is not None
     assert model_count is not None
@@ -42,3 +42,38 @@ def test_release_metadata_versions_match_package() -> None:
 
 def test_client_user_agent_uses_package_version() -> None:
     assert f"freellmpool/{__version__}" in client._USER_AGENT
+
+
+def test_pypi_metadata_has_launch_surfaces() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = pyproject["project"]
+    discovery = (ROOT / "docs/GITHUB_DISCOVERY.md").read_text(encoding="utf-8")
+
+    assert len(project["description"]) <= 120
+    assert f"> {project['description']}" in discovery
+
+    urls = project["urls"]
+    for name in ("Docs", "Changelog", "Issues", "Repository"):
+        assert name in urls
+
+    for keyword in (
+        "anthropic",
+        "claude",
+        "cursor",
+        "mcp",
+        "model-context-protocol",
+        "rate-limiting",
+        "speech-to-text",
+    ):
+        assert keyword in project["keywords"]
+
+    for classifier in (
+        "Framework :: AsyncIO",
+        "Operating System :: OS Independent",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ):
+        assert classifier in project["classifiers"]
+
+    dev_deps = project["optional-dependencies"]["dev"]
+    assert any(dep.startswith("build>=") for dep in dev_deps)
+    assert any(dep.startswith("twine>=") for dep in dev_deps)

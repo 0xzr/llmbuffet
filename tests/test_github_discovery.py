@@ -66,7 +66,8 @@ def test_github_discovery_description_stays_within_about_limit():
     assert len(description) == expected_len
     assert len(description) <= 120
     assert "zero keys to start" in description
-    assert "OpenAI/Anthropic proxy" in description
+    assert "18 LLM providers" in description
+    assert "failover" in description
 
 
 def test_github_discovery_includes_operator_only_actions():

@@ -29,9 +29,9 @@ P9 gap topics missing from the live repo:
 
 ## Recommended metadata
 
-Recommended description (103 chars):
+Recommended description (107 chars):
 
-> Free LLM API pool: 18 providers, 200+ models, zero keys to start. OpenAI/Anthropic proxy with failover.
+> Free LLM API pool: 18 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover.
 
 Recommended 20-topic set:
 
@@ -47,7 +47,7 @@ Operator command after merge:
 
 ```bash
 gh repo edit 0xzr/freellmpool \
-  --description "Free LLM API pool: 18 providers, 200+ models, zero keys to start. OpenAI/Anthropic proxy with failover." \
+  --description "Free LLM API pool: 18 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover." \
   --remove-topic ai \
   --remove-topic gateway \
   --remove-topic llm \
