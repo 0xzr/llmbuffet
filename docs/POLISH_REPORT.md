@@ -50,3 +50,13 @@
   models, 18 providers, $0" plus keyless-start and failover notes.
 - Moved both assets above the README summary and quickstart so the page opens
   with a visual demo.
+
+## P9 — GitHub-native discovery
+
+- Audited live GitHub About/topics metadata read-only and recorded the 20-topic
+  replacement plan in `docs/GITHUB_DISCOVERY.md`.
+- Prepared a 103-character About description with the zero-keys hook and the
+  exact operator-only `gh repo edit` command for after merge.
+- Added upload-ready `assets/social-preview.png` at 1280x640, kept the editable
+  SVG source, and documented the profile pin plus social-preview upload steps
+  without making external writes.
