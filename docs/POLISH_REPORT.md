@@ -12,3 +12,12 @@
   19s from venv creation to first reply in CI mode
   (`FREELLMPOOL_QUICKSTART_PACKAGE=.`); a direct manual probe measured the model
   call itself at 3.29s.
+
+## P3 — FAQ.md
+
+- Added `FAQ.md` with a provider-by-provider prompt destination table for all 18
+  built-in chat providers, conservative jurisdiction notes, ToS posture, failover
+  behavior, reliability caveats, comparison positioning, and ban-risk guidance.
+- Linked the FAQ prominently from the top of the README.
+- Grounded behavior claims in `providers.toml`, `models.py`, `config.py`,
+  `router.py`, and `client.py`; provider privacy links are listed separately.
