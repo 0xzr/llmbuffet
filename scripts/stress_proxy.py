@@ -2,8 +2,8 @@
 """Offline proxy stress smoke for regular user traffic.
 
 Starts a local freellmpool proxy backed by fake in-process providers, then sends
-mixed OpenAI/Anthropic-compatible requests through the HTTP server. No network
-provider APIs are called.
+mixed OpenAI, Responses API, and Anthropic-compatible requests through the HTTP
+server. No network provider APIs are called.
 """
 
 from __future__ import annotations
@@ -74,6 +74,30 @@ def _openai_body(text: str) -> dict[str, Any]:
     }
 
 
+def _tool_body() -> dict[str, Any]:
+    return {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "toolu_stress",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city": "Paris"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 6, "completion_tokens": 2},
+    }
+
+
 def _make_pool(tmp: Path, state: _StressState) -> Pool:
     providers = [
         Provider(
@@ -122,6 +146,8 @@ def _make_pool(tmp: Path, state: _StressState) -> Pool:
                 "embeddings",
             )
         state.bump("upstream_chat")
+        if body.get("tools"):
+            return HTTPResult(200, _tool_body(), "tool")
         return HTTPResult(200, _openai_body("ok"), "ok")
 
     def stream_post(url: str, headers: dict, body: dict, timeout: float):
@@ -156,13 +182,21 @@ def _make_pool(tmp: Path, state: _StressState) -> Pool:
     )
 
 
-def _request_json(method: str, url: str, payload: dict | None = None) -> tuple[int, Any]:
+def _request_json(
+    method: str,
+    url: str,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, Any]:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req_headers = dict(headers or {})
+    if data is not None:
+        req_headers.setdefault("Content-Type", "application/json")
     req = urllib.request.Request(
         url,
         data=data,
         method=method,
-        headers={"Content-Type": "application/json"} if data is not None else {},
+        headers=req_headers,
     )
     with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - localhost only
         raw = resp.read()
@@ -170,6 +204,48 @@ def _request_json(method: str, url: str, payload: dict | None = None) -> tuple[i
         if "application/json" in ctype:
             return resp.status, json.loads(raw or b"{}")
         return resp.status, raw.decode("utf-8", "replace")
+
+
+def _request_sse(
+    url: str,
+    payload: dict,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, list[tuple[str | None, Any]], str]:
+    req_headers = {"Content-Type": "application/json", **(headers or {})}
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=req_headers,
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - localhost only
+        raw = resp.read().decode("utf-8", "replace")
+        events: list[tuple[str | None, Any]] = []
+        current_event: str | None = None
+        current_data: list[str] = []
+        for line in raw.splitlines():
+            if not line:
+                if current_data:
+                    data = "\n".join(current_data)
+                    if data == "[DONE]":
+                        parsed: Any = data
+                    else:
+                        parsed = json.loads(data)
+                    events.append((current_event, parsed))
+                current_event = None
+                current_data = []
+                continue
+            if line.startswith("event:"):
+                current_event = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                current_data.append(line[len("data:") :].strip())
+        if current_data:
+            data = "\n".join(current_data)
+            events.append((current_event, "[DONE]" if data == "[DONE]" else json.loads(data)))
+        return resp.status, events, raw
+
+
+def _event_names(events: list[tuple[str | None, Any]]) -> list[str | None]:
+    return [name for name, _ in events]
 
 
 def _multipart(boundary: str = "BOUNDARY") -> bytes:
@@ -195,7 +271,7 @@ def _request_multipart(url: str) -> tuple[int, Any]:
 
 
 def _exercise(base: str, index: int) -> tuple[str, int]:
-    route = index % 8
+    route = index % 12
     try:
         if route == 0:
             status, _ = _request_json("GET", f"{base}/healthz")
@@ -213,8 +289,7 @@ def _exercise(base: str, index: int) -> tuple[str, int]:
             assert body["choices"][0]["message"]["content"] == "ok"
             return "chat", status
         if route == 3:
-            status, body = _request_json(
-                "POST",
+            status, events, _ = _request_sse(
                 f"{base}/v1/chat/completions",
                 {
                     "model": "auto",
@@ -222,7 +297,13 @@ def _exercise(base: str, index: int) -> tuple[str, int]:
                     "messages": [{"role": "user", "content": "hi"}],
                 },
             )
-            assert "[DONE]" in body
+            assert events[-1][1] == "[DONE]"
+            text = "".join(
+                (data["choices"][0].get("delta") or {}).get("content") or ""
+                for _, data in events
+                if isinstance(data, dict)
+            )
+            assert text == "ok"
             return "chat_stream", status
         if route == 4:
             status, body = _request_json(
@@ -237,13 +318,97 @@ def _exercise(base: str, index: int) -> tuple[str, int]:
             assert body["status"] == "completed"
             return "responses", status
         if route == 6:
+            status, events, _ = _request_sse(
+                f"{base}/v1/responses",
+                {"model": "auto", "stream": True, "input": "hi"},
+            )
+            assert _event_names(events) == [
+                "response.created",
+                "response.output_text.delta",
+                "response.completed",
+            ]
+            assert events[-1][1]["type"] == "response.completed"
+            return "responses_stream", status
+        if route == 7:
             status, body = _request_json(
                 "POST",
                 f"{base}/v1/messages",
-                {"model": "auto", "max_tokens": 32, "messages": [{"role": "user", "content": "hi"}]},
+                {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 32,
+                    "system": [{"type": "text", "text": "be brief"}],
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": "hi"}],
+                        }
+                    ],
+                },
+                headers={"anthropic-version": "2023-06-01"},
             )
             assert body["type"] == "message"
             return "messages", status
+        if route == 8:
+            status, events, _ = _request_sse(
+                f"{base}/v1/messages",
+                {
+                    "model": "claude-3-5-haiku-20241022",
+                    "stream": True,
+                    "max_tokens": 32,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+                headers={"anthropic-version": "2023-06-01"},
+            )
+            assert _event_names(events) == [
+                "message_start",
+                "content_block_start",
+                "content_block_delta",
+                "content_block_stop",
+                "message_delta",
+                "message_stop",
+            ]
+            assert events[-1][1]["type"] == "message_stop"
+            return "messages_stream", status
+        if route == 9:
+            status, body = _request_json(
+                "POST",
+                f"{base}/v1/messages",
+                {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 64,
+                    "tools": [
+                        {
+                            "name": "get_weather",
+                            "description": "return weather",
+                            "input_schema": {"type": "object"},
+                        }
+                    ],
+                    "tool_choice": {"type": "any"},
+                    "messages": [{"role": "user", "content": "weather in Paris?"}],
+                },
+                headers={"anthropic-version": "2023-06-01"},
+            )
+            assert body["stop_reason"] == "tool_use"
+            assert body["content"][0]["type"] == "tool_use"
+            assert body["content"][0]["name"] == "get_weather"
+            return "messages_tool_use", status
+        if route == 10:
+            status, body = _request_json(
+                "POST",
+                f"{base}/v1/messages/count_tokens",
+                {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": "count these tokens"}],
+                        }
+                    ],
+                },
+                headers={"anthropic-version": "2023-06-01"},
+            )
+            assert body["input_tokens"] >= 1
+            return "messages_count_tokens", status
         status, body = _request_multipart(f"{base}/v1/audio/transcriptions")
         assert body["text"]
         return "transcriptions", status

@@ -33,4 +33,4 @@ def test_release_ready_metadata_is_clean():
 def test_proxy_stress_script_tiny_profile():
     stress_proxy = _load_script("stress_proxy")
 
-    assert stress_proxy.run_stress(requests=16, concurrency=4, json_output=True) == 0
+    assert stress_proxy.run_stress(requests=24, concurrency=4, json_output=True) == 0
