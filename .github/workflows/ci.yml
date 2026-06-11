@@ -38,6 +38,8 @@ jobs:
         run: ruff check .
       - name: Validate catalog
         run: python scripts/validate_catalog.py
+      - name: Check public count claims
+        run: scripts/check-counts
       - name: Release metadata readiness
         run: python scripts/check_release_ready.py --skip-build
       - name: Proxy stress smoke

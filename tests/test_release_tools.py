@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +29,18 @@ def test_release_ready_metadata_is_clean():
     assert counts.enabled_chat_models >= 200
     assert counts.cataloged_chat_models >= 300
     assert release_ready.metadata_errors(ROOT) == []
+
+
+def test_public_count_claims_match_catalog():
+    result = subprocess.run(
+        [sys.executable, "scripts/check-counts"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_proxy_stress_script_tiny_profile():

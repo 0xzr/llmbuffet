@@ -30,3 +30,13 @@
 - Added rows for freellmpool, OpenRouter free models, LiteLLM, and FreeLLMAPI.
 - Noted that FreeLLMAPI predates this project and that the overlap is independent
   convergence.
+
+## P5 — Single-source the counts
+
+- Added `scripts/catalog_counts.py` so public provider/model counts are derived
+  from `src/freellmpool/providers.toml`.
+- Added executable `scripts/check-counts`, wired it into CI, and reused the shared
+  count helper from `scripts/check_release_ready.py`.
+- Updated `docs/free-llm-api-providers-list.html` model counts to match enabled
+  chat, embedding, and transcription routes in the catalog.
+- Removed the hardcoded provider count from the MCP tool description.

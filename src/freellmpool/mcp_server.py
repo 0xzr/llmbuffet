@@ -62,7 +62,7 @@ TOOLS = [
     {
         "name": "free_llm_ask",
         "description": (
-            "Ask a free LLM (pooled across 18 free providers, with automatic failover). "
+            "Ask a free LLM (pooled across configured free providers, with automatic failover). "
             "Offload a self-contained subtask — drafting, summarizing, classifying, "
             "brainstorming, a quick lookup — to a free model. The reply tells you which "
             "provider/model actually served it."
