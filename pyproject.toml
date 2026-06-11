@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "freellmpool"
-version = "0.11.1"
-description = "Pool the free tiers of 18 LLM providers (300+ models) behind one OpenAI-compatible endpoint. Free, zero-config, with automatic failover and quota tracking."
+version = "0.11.2"
+description = "Pool the free tiers of 18 LLM providers (300+ cataloged models) behind one OpenAI-compatible endpoint. Free, zero-config, with automatic failover and quota tracking."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

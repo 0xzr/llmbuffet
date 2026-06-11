@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] — 2026-06-10
+
+### Fixed
+- The local proxy now aligns its listen backlog with its 128-request worker cap,
+  so short mixed-traffic bursts queue cleanly instead of occasionally resetting
+  connections before the proxy can accept and handle them. The existing hard cap
+  still bounds worker threads and process resources under sustained floods.
+
 ## [0.11.1] — 2026-06-10
 
 Hardening and operations release after the 0.11 capacity tooling.

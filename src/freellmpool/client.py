@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 
+from ._version import __version__
 from .errors import ProviderHTTPError
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 
@@ -80,7 +81,7 @@ from collections.abc import Iterable, Iterator  # noqa: E402
 
 StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 
-_USER_AGENT = "freellmpool/0.11 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = f"freellmpool/{__version__} (+https://github.com/0xzr/freellmpool)"
 
 _CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
 # Cap a single upstream reply so a broken/malicious provider can't OOM the proxy.

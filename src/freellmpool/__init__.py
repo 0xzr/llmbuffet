@@ -9,6 +9,7 @@ Public API:
     print(reply.text)
 """
 
+from ._version import __version__
 from .errors import (
     AllProvidersExhausted,
     ContextWindowExceeded,
@@ -19,8 +20,6 @@ from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply
 from .plugins import register_adapter, register_provider
 from .router import Pool
-
-__version__ = "0.11.1"
 
 
 def __getattr__(name: str):

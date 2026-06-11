@@ -1,6 +1,7 @@
 # freellmpool
 
-Pool the free tiers of 18 LLM providers (200+ live-validated models) behind one
+Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
+models) behind one
 OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
 Works with no API keys.
 
