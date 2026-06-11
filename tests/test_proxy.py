@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from helpers import gemini_body, make_post, make_stream_post
 
+from freellmpool import __version__
 from freellmpool.proxy import _parse_model, serve
 from freellmpool.router import Pool
 
@@ -45,6 +46,11 @@ def test_chat_completions_shape(server):
     assert body["object"] == "chat.completion"
     assert body["choices"][0]["message"]["content"] == "ok"
     assert "x_freellmpool" in body
+
+
+def test_proxy_server_header_uses_package_version(server):
+    with urllib.request.urlopen(server + "/v1/models") as resp:  # noqa: S310
+        assert f"freellmpool/{__version__}" in resp.headers["Server"]
 
 
 def test_concurrent_chat_requests_share_pool_safely(providers, env, quota):

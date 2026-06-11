@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+from . import __version__
 from .anthropic_shim import estimate_tokens, reply_to_message, reply_to_sse, request_to_chat
 from .config import known_aliases, resolve_alias
 from .errors import (
@@ -224,7 +225,7 @@ def make_handler(pool: Pool, api_key: str | None = None):
         return snap
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "freellmpool/0.10"
+        server_version = f"freellmpool/{__version__}"
         # Socket read timeout: a slow/stalled client can't pin a worker thread + fd
         # indefinitely. setup() applies this to the connection via settimeout().
         timeout = 75
