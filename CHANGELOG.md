@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.3] — 2026-06-11
+
+Launch polish and packaging metadata release.
+
+### Added
+- A CI-backed 30-second quickstart check that installs from a clean venv and
+  requires a keyless first reply.
+- `FAQ.md` with prompt-destination, privacy, ToS, failover, ban-risk, and
+  comparison answers.
+- Above-the-fold README demo assets for `tokenmax`, plus an upload-ready GitHub
+  social preview asset and local GitHub discovery checklist.
+- Contributor templates, PR template, and ready-to-file good-first-issue drafts
+  for newcomer-sized tasks.
+- Release checklist for the operator-run tag/build/publish flow.
+
+### Changed
+- Public provider/model counts are now checked from the provider catalog by
+  `scripts/check-counts`, reducing drift across README/docs/release metadata.
+- README comparison copy is more explicit and gracious about OpenRouter,
+  LiteLLM, and FreeLLMAPI.
+- PyPI metadata now has a shorter launch description, broader keywords,
+  project URLs, and more complete classifiers.
+
 ## [0.11.2] — 2026-06-10
 
 ### Fixed

@@ -16,35 +16,18 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 if _SRC.is_dir():
     sys.path.insert(0, str(_SRC))
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+from catalog_counts import catalog_counts  # noqa: E402
 
 from freellmpool._version import __version__  # noqa: E402
-
-
-@dataclass(frozen=True)
-class CatalogCounts:
-    providers: int
-    enabled_chat_models: int
-    cataloged_chat_models: int
-
-    @property
-    def live_bucket(self) -> str:
-        return _bucket(self.enabled_chat_models)
-
-    @property
-    def cataloged_bucket(self) -> str:
-        return _bucket(self.cataloged_chat_models)
-
-
-def _bucket(value: int) -> str:
-    if value < 100:
-        return str(value)
-    return f"{(value // 100) * 100}+"
 
 
 def _read(path: Path) -> str:
@@ -53,22 +36,6 @@ def _read(path: Path) -> str:
 
 def _load_pyproject(root: Path) -> dict:
     return tomllib.loads(_read(root / "pyproject.toml"))
-
-
-def catalog_counts(root: Path) -> CatalogCounts:
-    data = tomllib.loads(_read(root / "src" / "freellmpool" / "providers.toml"))
-    providers = data.get("provider") or []
-    enabled = 0
-    cataloged = 0
-    for provider in providers:
-        models = provider.get("models") or []
-        cataloged += len(models)
-        enabled += sum(1 for model in models if model.get("enabled", True))
-    return CatalogCounts(
-        providers=len(providers),
-        enabled_chat_models=enabled,
-        cataloged_chat_models=cataloged,
-    )
 
 
 def metadata_errors(root: Path, *, version: str | None = None) -> list[str]:

@@ -1,69 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="terminal" baseProfile="full" viewBox="0 0 767 455" width="767" version="1.1">
-    <defs>
-        <termtosvg:template_settings xmlns:termtosvg="https://github.com/nbedos/termtosvg">
-            <termtosvg:screen_geometry columns="90" rows="22"/>
-            <termtosvg:animation type="css"/>
-        </termtosvg:template_settings>
-        <style type="text/css" id="generated-style"><![CDATA[#screen {
-                font-family: 'DejaVu Sans Mono', monospace;
-                font-style: normal;
-                font-size: 14px;
-            }
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-labelledby="title desc">
+  <title id="title">freellmpool tokenmax terminal demo</title>
+  <desc id="desc">A looping terminal demo showing freellmpool tokenmax fan out to free models, then synthesize the result.</desc>
+  <defs>
+    <style>
+      :root { --animation-duration: 8500ms; }
+      .bg { fill: #0b1020; }
+      .panel { fill: #121a2b; stroke: #273149; stroke-width: 1; }
+      .muted { fill: #8da0bf; }
+      .text { fill: #eef4ff; font: 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .small { font-size: 15px; }
+      .prompt { fill: #63d297; }
+      .dim { fill: #64748b; }
+      .cyan { fill: #60d5f7; }
+      .pink { fill: #ff6aa2; }
+      .yellow { fill: #ffd166; }
+      .green { fill: #84e88b; }
+      .purple { fill: #b69cff; }
+      .line { opacity: 0; animation: show var(--animation-duration) steps(1, end) infinite; }
+      .l1 { animation-delay: 0ms; }
+      .l2 { animation-delay: 900ms; }
+      .l3 { animation-delay: 1600ms; }
+      .l4 { animation-delay: 2500ms; }
+      .l5 { animation-delay: 3400ms; }
+      .l6 { animation-delay: 4300ms; }
+      .l7 { animation-delay: 5200ms; }
+      .l8 { animation-delay: 6100ms; }
+      .cursor { animation: blink 900ms steps(1, end) infinite; }
+      @keyframes show { 0%, 100% { opacity: 1; } }
+      @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    </style>
+  </defs>
+  <rect class="bg" width="960" height="540" rx="18"/>
+  <rect class="panel" x="34" y="32" width="892" height="476" rx="12"/>
+  <circle cx="62" cy="58" r="7" fill="#ff5f57"/>
+  <circle cx="84" cy="58" r="7" fill="#febc2e"/>
+  <circle cx="106" cy="58" r="7" fill="#28c840"/>
+  <text x="132" y="64" class="text small muted">freellmpool local terminal</text>
 
-        text {
-            dominant-baseline: text-before-edge;
-            white-space: pre;
-        }
-    
-            :root {
-                --animation-duration: 4909ms;
-            }
-
-            @keyframes roll {
-                0.000%{transform:translateY(0px)}
-10.206%{transform:translateY(-408px)}
-30.617%{transform:translateY(-816px)}
-40.803%{transform:translateY(-1224px)}
-69.566%{transform:translateY(-1632px)}
-79.629%{transform:translateY(-2040px)}
-100.000%{transform:translateY(-2040px)}
-            }
-
-            #screen_view {
-                animation-duration: 4909ms;
-                animation-iteration-count:infinite;
-                animation-name:roll;
-                animation-timing-function: steps(1,end);
-                animation-fill-mode: forwards;
-            }
-        ]]></style>
-        <style type="text/css" id="user-style">
-            /* The colors defined below are the default 16 colors used for rendering text of the terminal. Adjust
-               them as needed.
-               gjm8 color theme (source: https://terminal.sexy/) */
-            .foreground {fill: #f8f8f2}
-            .background {fill: #272822}
-            .color0 {fill: #272822}
-            .color1 {fill: #f92672}
-            .color2 {fill: #a6e22e}
-            .color3 {fill: #f4bf75}
-            .color4 {fill: #66d9ef}
-            .color5 {fill: #ae81ff}
-            .color6 {fill: #a1efe4}
-            .color7 {fill: #f8f8f2}
-            .color8 {fill: #75715e}
-            .color9 {fill: #fd971f}
-            .color10 {fill: #383830}
-            .color11 {fill: #49483e}
-            .color12 {fill: #a59f85}
-            .color13 {fill: #f5f4f1}
-            .color14 {fill: #cc6633}
-            .color15 {fill: #f9f8f5}
-        </style>
-    </defs>
-    <rect id="terminalui" class="background" width="100%" height="100%" ry="4.5826941"/>
-    <circle cx="24" cy="23" r="7" class="color1"/>
-    <circle cx="44" cy="23" r="7" class="color3"/>
-    <circle cx="64" cy="23" r="7" class="color2"/>
-    <svg id="screen" width="720" height="374" x="23" y="50" viewBox="0 0 720 374" preserveAspectRatio="xMidYMin slice"><rect class="background" height="100%" width="100%" x="0" y="0"/><defs><g id="g1"><text x="0" textLength="8" fill="#5faf5f">$</text><text x="8" textLength="8" class="foreground"> </text><text x="16" textLength="184" font-weight="bold" class="foreground">pip install freellmpool</text></g><g id="g2"><text x="0" textLength="8" class="background"> </text></g><g id="g3"><text x="0" textLength="536" fill="#808080">Successfully installed freellmpool-0.11.2   (one dependency: httpx)</text></g><g id="g4"><text x="0" textLength="8" fill="#5faf5f">$</text><text x="8" textLength="8" class="foreground"> </text><text x="16" textLength="448" font-weight="bold" class="foreground">freellmpool providers          # 18 free tiers, one pool</text></g><g id="g5"><text x="0" textLength="360" class="foreground">freellmpool catalog: 18 providers, 237 models</text></g><g id="g6"><text x="0" textLength="600" class="foreground">  &#10003; pollinations Pollinations (keyless)       3 models         [configured]</text></g><g id="g7"><text x="0" textLength="608" class="foreground">  &#10003; llm7         LLM7 (key optional)          4 models (+5 off) [configured]</text></g><g id="g8"><text x="0" textLength="624" class="foreground">  &#10003; ovh          OVHcloud AI Endpoints (keyless) 13 models        [configured]</text></g><g id="g9"><text x="0" textLength="648" class="foreground">  &#183; groq         Groq                         9 models         [set GROQ_API_KEY]</text></g><g id="g10"><text x="0" textLength="688" class="foreground">  &#183; cerebras     Cerebras                     2 models (+2 off) [set CEREBRAS_API_KEY]</text></g><g id="g11"><text x="0" textLength="688" class="foreground">  &#183; nvidia       NVIDIA NIM                   40 models (+53 off) [set NVIDIA_API_KEY]</text></g><g id="g12"><text x="0" textLength="8" fill="#5faf5f">$</text><text x="8" textLength="8" class="foreground"> </text><text x="16" textLength="504" font-weight="bold" class="foreground">freellmpool code claude        # run Claude Code on free models</text></g><g id="g13"><text x="0" textLength="384" class="foreground">Wire Claude Code to free models via freellmpool:</text></g><g id="g14"><text x="0" textLength="272" class="foreground">  1. freellmpool proxy --port 8080</text></g><g id="g15"><text x="0" textLength="632" class="foreground">  2. export ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=anything</text></g><g id="g16"><text x="0" textLength="544" class="foreground">  3. claude   # now running on free models via the /v1/messages shim</text></g></defs><g id="screen_view"><g><use xlink:href="#g1" y="0"/><rect x="0" y="17" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="17"/></g><g><use xlink:href="#g1" y="408"/><use xlink:href="#g3" y="425"/><rect x="0" y="442" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="442"/></g><g><use xlink:href="#g1" y="816"/><use xlink:href="#g3" y="833"/><use xlink:href="#g4" y="850"/><rect x="0" y="867" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="867"/></g><g><use xlink:href="#g1" y="1224"/><use xlink:href="#g3" y="1241"/><use xlink:href="#g4" y="1258"/><use xlink:href="#g5" y="1275"/><use xlink:href="#g6" y="1309"/><use xlink:href="#g7" y="1326"/><use xlink:href="#g8" y="1343"/><use xlink:href="#g9" y="1360"/><use xlink:href="#g10" y="1377"/><use xlink:href="#g11" y="1394"/><rect x="0" y="1411" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="1411"/></g><g><use xlink:href="#g1" y="1632"/><use xlink:href="#g3" y="1649"/><use xlink:href="#g4" y="1666"/><use xlink:href="#g5" y="1683"/><use xlink:href="#g6" y="1717"/><use xlink:href="#g7" y="1734"/><use xlink:href="#g8" y="1751"/><use xlink:href="#g9" y="1768"/><use xlink:href="#g10" y="1785"/><use xlink:href="#g11" y="1802"/><use xlink:href="#g12" y="1819"/><rect x="0" y="1836" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="1836"/></g><g><use xlink:href="#g1" y="2040"/><use xlink:href="#g3" y="2057"/><use xlink:href="#g4" y="2074"/><use xlink:href="#g5" y="2091"/><use xlink:href="#g6" y="2125"/><use xlink:href="#g7" y="2142"/><use xlink:href="#g8" y="2159"/><use xlink:href="#g9" y="2176"/><use xlink:href="#g10" y="2193"/><use xlink:href="#g11" y="2210"/><use xlink:href="#g12" y="2227"/><use xlink:href="#g13" y="2244"/><use xlink:href="#g14" y="2278"/><use xlink:href="#g15" y="2295"/><use xlink:href="#g16" y="2312"/><rect x="0" y="2346" width="8" height="17" class="foreground"/><use xlink:href="#g2" y="2346"/></g></g></svg>
+  <g transform="translate(58 108)">
+    <text class="text line l1" x="0" y="0"><tspan class="prompt">$</tspan> pip install freellmpool</text>
+    <text class="text line l2" x="0" y="42"><tspan class="green">Successfully installed freellmpool-0.11.3</tspan> <tspan class="dim">(httpx only)</tspan></text>
+    <text class="text line l3" x="0" y="84"><tspan class="prompt">$</tspan> freellmpool tokenmax "name this free LLM gateway" --max-models 6</text>
+    <text class="text line l4" x="0" y="126"><tspan class="pink">TOKENMAXXING</tspan> <tspan class="yellow">6/6</tspan> models across <tspan class="cyan">4 providers</tspan></text>
+    <text class="text line l5" x="0" y="168"><tspan class="cyan">pollinations/openai</tspan>       "freellmpool"</text>
+    <text class="text line l5" x="0" y="202"><tspan class="purple">ovh/Meta-Llama-3_3-70B</tspan>   "FreePool"</text>
+    <text class="text line l6" x="0" y="236"><tspan class="yellow">kilo/openrouter/free</tspan>      "ZeroKey"</text>
+    <text class="text line l6" x="0" y="270"><tspan class="green">llm7/qwen3-235b</tspan>           "PoolPilot"</text>
+    <text class="text line l7" x="0" y="326"><tspan class="pink">SYNTHESIS</tspan> freellmpool: one local API over the free tiers.</text>
+    <text class="text line l8" x="0" y="382"><tspan class="green">freellmpool catalog:</tspan> 18 providers, 237 models - 18 free tiers - $0 to start</text>
+    <rect class="cursor" x="0" y="404" width="10" height="22" fill="#eef4ff"/>
+  </g>
 </svg>

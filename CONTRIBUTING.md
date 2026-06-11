@@ -9,17 +9,27 @@ providers** and **keeping the existing catalog accurate** as free tiers drift.
 git clone https://github.com/0xzr/freellmpool
 cd freellmpool
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest          # 0 network calls — everything is faked
-ruff check src tests
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+ruff check .
+pytest          # 0 network calls; provider traffic is faked
 ```
 
-Useful maintainer checks:
+Focused loop while you are working:
 
 ```bash
-python scripts/stress_proxy.py --profile ci
-python scripts/check_release_ready.py --skip-build
-python scripts/check_release_ready.py
+ruff check .
+pytest tests/test_cli.py              # or the smallest relevant test file
+scripts/check-counts                  # when README/docs count claims change
+python3 scripts/validate_catalog.py   # when providers.toml changes
+```
+
+Useful release-readiness checks:
+
+```bash
+python3 scripts/stress_proxy.py --profile ci
+python3 scripts/check_release_ready.py --skip-build
+python3 scripts/check_release_ready.py
 ```
 
 `stress_proxy.py` starts a local fake-backed proxy and sends mixed chat,
@@ -27,6 +37,10 @@ streaming, embeddings, Responses, Anthropic Messages, transcription, models,
 and health traffic through the real HTTP server. `check_release_ready.py`
 cross-checks version/provider/model-count metadata; without `--skip-build` it
 also builds the sdist/wheel, runs `twine check`, and fresh-installs the wheel.
+
+Good first issue drafts live in [`docs/GOOD_FIRST_ISSUES.md`](docs/GOOD_FIRST_ISSUES.md).
+They include context, pointers, acceptance checks, labels, and the exact
+maintainer commands for filing them.
 
 ## Adding a provider
 

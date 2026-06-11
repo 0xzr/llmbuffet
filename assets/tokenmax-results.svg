@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-labelledby="title desc">
+  <title id="title">freellmpool tokenmax results screenshot</title>
+  <desc id="desc">Static launch card showing 200 plus models, 18 providers, zero dollars, keyless start, and automatic failover.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7fafc; }
+      .ink { fill: #102033; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      .muted { fill: #5e718d; }
+      .card { fill: #ffffff; stroke: #d8e1ee; stroke-width: 2; }
+      .metric { font-size: 76px; font-weight: 800; }
+      .label { font-size: 25px; font-weight: 700; }
+      .small { font-size: 24px; }
+      .tiny { font-size: 20px; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="630"/>
+  <text class="ink" x="70" y="88" style="font-size:44px;font-weight:800">freellmpool tokenmax</text>
+  <text class="ink muted small" x="70" y="128">A local OpenAI-compatible pool over legitimate free tiers.</text>
+
+  <rect class="card" x="70" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="104" y="292">200+</text>
+  <text class="ink label" x="108" y="340">live-validated models</text>
+  <text class="ink muted tiny" x="108" y="374">237 enabled chat routes today</text>
+
+  <rect class="card" x="440" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="474" y="292">18</text>
+  <text class="ink label" x="478" y="340">providers</text>
+  <text class="ink muted tiny" x="478" y="374">Pollinations, OVHcloud, Groq...</text>
+
+  <rect class="card" x="810" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="844" y="292">$0</text>
+  <text class="ink label" x="848" y="340">to start</text>
+  <text class="ink muted tiny" x="848" y="374">keyless first reply in 19s</text>
+
+  <rect class="card" x="70" y="448" width="1060" height="104" rx="18"/>
+  <text class="ink small" x="108" y="512">tokenmax fans one prompt across free models, shows every answer, then synthesizes the best result.</text>
+  <text class="ink muted tiny" x="108" y="542">Automatic failover on rate limits, timeouts, 5xx, empty replies, and transport errors.</text>
+</svg>

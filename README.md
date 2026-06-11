@@ -1,16 +1,35 @@
 # freellmpool
 
+![freellmpool tokenmax terminal demo](assets/demo.svg)
+
+![200+ models, 18 providers, $0 to start](assets/tokenmax-results.svg)
+
 Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
-models) behind one
-OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
-Works with no API keys.
+models) behind one OpenAI-compatible endpoint — as a CLI, a Python library, or a
+local proxy. Works with no API keys.
 
 [![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
 [![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/docs-0xzr.github.io%2Ffreellmpool-6ea8ff)](https://0xzr.github.io/freellmpool/)
 
-![demo](assets/demo.svg)
+[FAQ](FAQ.md): where prompts go, ToS posture, failover, bans, and comparisons.
+
+## 30-second quickstart
+
+Fresh install to first free-model reply takes about 19 seconds on a clean
+Linux/Python 3.12 environment, with zero API keys:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install freellmpool
+freellmpool ask --max-tokens 32 "Reply with one short sentence: freellmpool is ready."
+```
+
+CI runs the same path from this checkout with
+`FREELLMPOOL_QUICKSTART_PACKAGE=. scripts/quickstart-test.sh`.
 
 Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare,
 Mistral, Cohere and others each give away a free tier — but each has its own SDK,
@@ -19,14 +38,7 @@ request to a provider you have access to, fails over to the next when one is rat
 limited or down, and tracks per-day usage so you get the most out of every tier.
 
 Several providers (Pollinations, OVHcloud, and Kilo Gateway) need no API key, so
-a fresh install answers immediately:
-
-```console
-$ pip install freellmpool
-$ freellmpool ask "Explain the CAP theorem in one sentence."
-A distributed system can guarantee at most two of consistency, availability, and
-partition tolerance at the same time.
-```
+the quickstart above answers immediately.
 
 Add keys for the other providers to unlock more models and higher limits.
 
@@ -337,15 +349,23 @@ Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## How it compares
 
-| Tool | What it is | Install | Keyless start | CLI / library / proxy / MCP |
-|---|---|---|---|---|
-| **freellmpool** | Pools many providers' **free tiers** | `pip install` | Yes (3 providers) | All four |
-| OpenRouter | Hosted paid aggregator (some free models) | API key | No | API only |
-| LiteLLM | Multi-provider SDK/proxy (bring your own keys) | `pip install` | No | Library + proxy |
-| Self-hosted free-API servers | A server you deploy | Docker + config | No | Server only |
+| Tool | Keyless start | # providers | Failover | MCP server | CLI | Transcription | Local/self-hosted | License |
+|---|---|---:|---|---|---|---|---|---|
+| **freellmpool** | Yes: Pollinations, OVHcloud, Kilo Gateway; LLM7 is key-optional | 18 built-in chat providers | Yes: tries the next provider on rate limits, timeouts, 5xx, empty replies, and transport errors | Yes: `freellmpool mcp` | Yes: `freellmpool ask`, `tokenmax`, `providers`, `proxy`, and more | Yes: OpenAI-compatible `/v1/audio/transcriptions` with provider failover | Yes: local Python package and local proxy | MIT |
+| OpenRouter free models | No: OpenRouter account/API key required | One hosted OpenRouter account routing across many upstreams; the free-model router currently lists free variants | Yes: OpenRouter handles provider routing/fallbacks | Not a native MCP server; OpenRouter docs show MCP-client/tool patterns | No first-party local CLI in the docs checked | Yes: OpenRouter now documents audio transcription APIs | No: hosted service | Proprietary service |
+| LiteLLM | No: bring provider keys or hosted LiteLLM credentials | 100+ LLM providers | Yes: router/fallbacks, including transcription fallbacks | Yes: LiteLLM Proxy includes an MCP Gateway | Yes: SDK/proxy command surface, not a one-shot free-model CLI | Yes: `/audio/transcriptions` support | Yes: self-host the proxy or use hosted LiteLLM | MIT for core repo; commercial license for enterprise-only pieces |
+| FreeLLMAPI | No: add your own free-tier provider keys; keyless providers can be configured after setup | 16 free-tier providers plus custom OpenAI-compatible endpoints | Yes: fallback chain on 429, 5xx, and timeouts | No native MCP server in the README checked | Dashboard/server, desktop app, and Docker; no first-class one-shot CLI in the README checked | No: `/v1/audio/*` is listed as not yet supported | Yes: self-hosted Node/Docker proxy | MIT |
 
-freellmpool's niche is the **keyless, pip-installable client** for squeezing the
-hosted free tiers — not a server you deploy, and not a paid aggregator.
+FreeLLMAPI predates this project, and the overlap is independent convergence:
+both projects noticed that legitimate free tiers are useful when treated
+carefully. freellmpool's niche is the **keyless, pip-installable client** for
+squeezing hosted free tiers from a CLI, library, local proxy, and MCP server;
+OpenRouter is the polished hosted route; LiteLLM is the mature bring-your-own-key
+gateway.
+
+Table sources: freellmpool's catalog and proxy code in this repo; OpenRouter's
+quickstart, free-model, routing, and audio docs; LiteLLM's README, MCP docs, and
+audio transcription docs; FreeLLMAPI's README.
 
 ## FAQ
 
@@ -372,14 +392,20 @@ higher limits.
 **Is it free and open source?** Yes, MIT-licensed. More at the
 [project page](https://0xzr.github.io/freellmpool/).
 
+## Featured in
+
+- Community videos (Spanish, by lytohlg AI): ["Accede a 18 modelos de IA GRATIS con 1 solo comando"](https://www.youtube.com/watch?v=1UfIlWoedho) and ["Prueba 18 IAs GRATIS sin API key en 30 segundos"](https://www.youtube.com/watch?v=oaM_E92WVGQ).
+- Directory: [FreeLLM Pool on MCP Market](https://mcpmarket.com/server/freellm-pool).
+
 ## Contributing
 
 New providers and fixes to stale limits are the most useful contributions, and
 both are usually a small change to `providers.toml`. See
-[CONTRIBUTING.md](CONTRIBUTING.md). Tests run with no network access:
+[CONTRIBUTING.md](CONTRIBUTING.md). Maintainer-ready newcomer tasks are drafted in
+[docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md). Tests run with no network access:
 
 ```bash
-pip install -e ".[dev]" && pytest && ruff check src tests
+python -m pip install -e ".[dev]" && ruff check . && pytest
 ```
 
 ## License

@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">freellmpool social preview</title>
+  <desc id="desc">Free LLM API pool with zero keys to start, 18 providers, 200+ models, OpenAI and Anthropic proxy support, failover, MCP, rate limits, and transcription.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101317"/>
+      <stop offset="0.42" stop-color="#172026"/>
+      <stop offset="1" stop-color="#201825"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#65e4b6"/>
+      <stop offset="0.47" stop-color="#7cc7ff"/>
+      <stop offset="1" stop-color="#ffbd59"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <path d="M0 530 C180 490 250 566 420 528 C610 486 720 428 890 458 C1060 488 1115 600 1280 542 L1280 640 L0 640 Z" fill="#65e4b6" opacity="0.11"/>
+  <path d="M0 82 L1280 28 L1280 132 L0 190 Z" fill="#7cc7ff" opacity="0.07"/>
+  <path d="M1012 0 L1280 0 L1280 640 L914 640 C1018 516 1063 399 1046 287 C1035 211 1022 123 1012 0 Z" fill="#ffbd59" opacity="0.08"/>
+
+  <g transform="translate(72 72)">
+    <rect x="0" y="0" width="1136" height="496" rx="30" fill="#15191f" opacity="0.82" filter="url(#softShadow)"/>
+    <rect x="0" y="0" width="1136" height="496" rx="30" fill="none" stroke="#ffffff" stroke-opacity="0.11"/>
+    <rect x="36" y="36" width="1064" height="8" rx="4" fill="url(#accent)"/>
+
+    <g transform="translate(48 82)">
+      <text x="0" y="56" fill="#f7fbff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="74" font-weight="800">freellmpool</text>
+      <text x="4" y="111" fill="#aebbc8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="31" font-weight="600">Free LLM API pool for agents and local proxies</text>
+
+      <g transform="translate(0 160)">
+        <rect x="0" y="0" width="280" height="116" rx="18" fill="#202b30" stroke="#65e4b6" stroke-opacity="0.42"/>
+        <text x="28" y="48" fill="#65e4b6" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">zero keys</text>
+        <text x="28" y="82" fill="#f7fbff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">to first reply</text>
+
+        <rect x="304" y="0" width="244" height="116" rx="18" fill="#202630" stroke="#7cc7ff" stroke-opacity="0.42"/>
+        <text x="332" y="48" fill="#7cc7ff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">18 providers</text>
+        <text x="332" y="82" fill="#f7fbff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">200+ models</text>
+
+        <rect x="572" y="0" width="284" height="116" rx="18" fill="#2a2430" stroke="#ffbd59" stroke-opacity="0.44"/>
+        <text x="600" y="48" fill="#ffbd59" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800">OpenAI +</text>
+        <text x="600" y="82" fill="#f7fbff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Anthropic proxy</text>
+      </g>
+
+      <g transform="translate(0 330)" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">
+        <rect x="0" y="-34" width="146" height="52" rx="26" fill="#273337"/>
+        <text x="26" y="0" fill="#dff9ee">failover</text>
+        <rect x="166" y="-34" width="168" height="52" rx="26" fill="#252d3a"/>
+        <text x="191" y="0" fill="#e4f2ff">rate limits</text>
+        <rect x="354" y="-34" width="92" height="52" rx="26" fill="#302938"/>
+        <text x="384" y="0" fill="#ffe4ab">MCP</text>
+        <rect x="466" y="-34" width="188" height="52" rx="26" fill="#273337"/>
+        <text x="491" y="0" fill="#dff9ee">transcription</text>
+        <rect x="674" y="-34" width="152" height="52" rx="26" fill="#252d3a"/>
+        <text x="701" y="0" fill="#e4f2ff">tokenmax</text>
+      </g>
+    </g>
+
+    <g transform="translate(908 104)">
+      <rect x="0" y="0" width="166" height="286" rx="24" fill="#0f1318" stroke="#ffffff" stroke-opacity="0.11"/>
+      <circle cx="42" cy="48" r="12" fill="#65e4b6"/>
+      <circle cx="82" cy="48" r="12" fill="#7cc7ff"/>
+      <circle cx="122" cy="48" r="12" fill="#ffbd59"/>
+      <path d="M36 108 L130 108" stroke="#aebbc8" stroke-width="12" stroke-linecap="round" opacity="0.74"/>
+      <path d="M36 152 L106 152" stroke="#65e4b6" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+      <path d="M36 196 L130 196" stroke="#7cc7ff" stroke-width="12" stroke-linecap="round" opacity="0.86"/>
+      <path d="M36 240 L90 240" stroke="#ffbd59" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+    </g>
+  </g>
+</svg>

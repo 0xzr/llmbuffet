@@ -7,6 +7,17 @@ on:
     branches: [main]
 
 jobs:
+  quickstart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Cold quickstart
+        run: FREELLMPOOL_QUICKSTART_PACKAGE=. scripts/quickstart-test.sh
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -27,6 +38,8 @@ jobs:
         run: ruff check .
       - name: Validate catalog
         run: python scripts/validate_catalog.py
+      - name: Check public count claims
+        run: scripts/check-counts
       - name: Release metadata readiness
         run: python scripts/check_release_ready.py --skip-build
       - name: Proxy stress smoke
