@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+import xml.dom.minidom
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,3 +46,28 @@ def test_readme_comparison_table_has_required_p4_shape():
 
     assert "FreeLLMAPI predates this project" in section
     assert "independent convergence" in section
+
+
+def test_readme_opens_with_tokenmax_demo_assets():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    opening = readme.split("## 30-second quickstart", 1)[0]
+
+    assert "assets/demo.svg" in opening
+    assert "assets/tokenmax-results.svg" in opening
+    assert "tokenmax" in opening.lower()
+
+
+def test_demo_assets_are_well_formed_and_current():
+    demo = (ROOT / "assets/demo.svg").read_text(encoding="utf-8")
+    results = (ROOT / "assets/tokenmax-results.svg").read_text(encoding="utf-8")
+
+    xml.dom.minidom.parseString(demo)
+    xml.dom.minidom.parseString(results)
+    assert "TOKENMAXXING" in demo
+    assert "--animation-duration: 8500ms" in demo
+    assert "freellmpool-0.11.2" in demo
+    assert "18 providers, 237 models" in demo
+    assert "18 free tiers" in demo
+    assert "200+" in results
+    assert "18 providers" in results
+    assert "$0" in results

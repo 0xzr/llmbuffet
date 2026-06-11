@@ -1,5 +1,22 @@
 # freellmpool
 
+![freellmpool tokenmax terminal demo](assets/demo.svg)
+
+![200+ models, 18 providers, $0 to start](assets/tokenmax-results.svg)
+
+Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
+models) behind one OpenAI-compatible endpoint — as a CLI, a Python library, or a
+local proxy. Works with no API keys.
+
+[![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
+[![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/docs-0xzr.github.io%2Ffreellmpool-6ea8ff)](https://0xzr.github.io/freellmpool/)
+
+[FAQ](FAQ.md): where prompts go, ToS posture, failover, bans, and comparisons.
+
+## 30-second quickstart
+
 Fresh install to first free-model reply takes about 19 seconds on a clean
 Linux/Python 3.12 environment, with zero API keys:
 
@@ -13,20 +30,6 @@ freellmpool ask --max-tokens 32 "Reply with one short sentence: freellmpool is r
 
 CI runs the same path from this checkout with
 `FREELLMPOOL_QUICKSTART_PACKAGE=. scripts/quickstart-test.sh`.
-
-[FAQ](FAQ.md): where prompts go, ToS posture, failover, bans, and comparisons.
-
-Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
-models) behind one
-OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
-Works with no API keys.
-
-[![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
-[![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Website](https://img.shields.io/badge/docs-0xzr.github.io%2Ffreellmpool-6ea8ff)](https://0xzr.github.io/freellmpool/)
-
-![demo](assets/demo.svg)
 
 Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare,
 Mistral, Cohere and others each give away a free tier — but each has its own SDK,

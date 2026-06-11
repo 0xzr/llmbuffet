@@ -40,3 +40,13 @@
 - Updated `docs/free-llm-api-providers-list.html` model counts to match enabled
   chat, embedding, and transcription routes in the catalog.
 - Removed the hardcoded provider count from the MCP tool description.
+
+## P2 — Demo at the top of the README
+
+- Replaced `assets/demo.svg` with an 8.5s looping tokenmax terminal demo that
+  shows install, all-model fan-out, per-provider answers, synthesis, and current
+  catalog counts.
+- Added `assets/tokenmax-results.svg`, a static results image showing "200+
+  models, 18 providers, $0" plus keyless-start and failover notes.
+- Moved both assets above the README summary and quickstart so the page opens
+  with a visual demo.
