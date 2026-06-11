@@ -1,5 +1,19 @@
 # freellmpool
 
+Fresh install to first free-model reply takes about 19 seconds on a clean
+Linux/Python 3.12 environment, with zero API keys:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install freellmpool
+freellmpool ask --max-tokens 32 "Reply with one short sentence: freellmpool is ready."
+```
+
+CI runs the same path from this checkout with
+`FREELLMPOOL_QUICKSTART_PACKAGE=. scripts/quickstart-test.sh`.
+
 Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
 models) behind one
 OpenAI-compatible endpoint — as a CLI, a Python library, or a local proxy.
@@ -19,14 +33,7 @@ request to a provider you have access to, fails over to the next when one is rat
 limited or down, and tracks per-day usage so you get the most out of every tier.
 
 Several providers (Pollinations, OVHcloud, and Kilo Gateway) need no API key, so
-a fresh install answers immediately:
-
-```console
-$ pip install freellmpool
-$ freellmpool ask "Explain the CAP theorem in one sentence."
-A distributed system can guarantee at most two of consistency, availability, and
-partition tolerance at the same time.
-```
+the quickstart above answers immediately.
 
 Add keys for the other providers to unlock more models and higher limits.
 
